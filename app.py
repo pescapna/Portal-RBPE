@@ -2,38 +2,41 @@ import streamlit as st
 import pandas as pd
 import google.generativeai as genai
 import plotly.express as px
+import plotly.graph_objects as go
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Portal RBPE", page_icon="🚢", layout="wide", initial_sidebar_state="expanded")
 
-# --- INYECCIÓN DE CSS PARA DISEÑO MODERNO ---
+# --- CSS MEJORADO (Sin ocultar el menú de navegación) ---
 st.markdown("""
 <style>
+    /* Ocultamos solo el menú de Streamlit y el pie de página, NO el header */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
     
-    /* Estilo de Tarjetas de Métricas */
+    /* Diseño de las Tarjetas de Métricas (KPIs) */
     div[data-testid="metric-container"] {
         background-color: #ffffff;
         border: 1px solid #e2e8f0;
-        border-left: 5px solid #1e3a8a;
+        border-left: 5px solid #0ea5e9;
         border-radius: 8px;
         padding: 15px;
-        box-shadow: 2px 2px 10px rgba(0,0,0,0.05);
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.04);
+        transition: transform 0.2s;
+    }
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 2px 4px 12px rgba(0,0,0,0.1);
     }
     
-    /* Diseño del Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: #0f172a;
-    }
-    [data-testid="stSidebar"] * {
-        color: white !important;
+    /* Ajustes generales de la fuente y fondo */
+    .stApp {
+        background-color: #f8fafc;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- SISTEMA DE LOGIN MULTIUSUARIO ---
+# --- SISTEMA DE LOGIN ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
@@ -43,10 +46,8 @@ def check_password():
         col1, col2, col3 = st.columns([1, 1.5, 1])
         with col2:
             with st.container(border=True):
-                st.markdown("<h1 style='text-align: center; color: #1E3A8A;'>⚓ Portal RBPE</h1>", unsafe_allow_html=True)
-                st.markdown("<p style='text-align: center;'>Acceso Restringido - Nivel 1</p>", unsafe_allow_html=True)
+                st.markdown("<h2 style='text-align: center; color: #0f172a;'>⚓ Acceso RBPE</h2>", unsafe_allow_html=True)
                 st.divider()
-                
                 with st.form("login_form"):
                     usuario = st.text_input("👤 Usuario")
                     clave = st.text_input("🔑 Contraseña", type="password")
@@ -66,203 +67,195 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# CONFIGURACIÓN DE IA Y BASE DE DATOS
+# IA Y BASE DE DATOS
 # ==========================================
-
 genai.configure(api_key=st.secrets["api"]["gemini_key"])
 modelo_ia = genai.GenerativeModel('gemini-3.1-flash-lite')
 SHEET_ID = st.secrets["api"]["sheet_id"]
 
 @st.cache_data(ttl=60)
-def cargar_datos_sheets():
+def cargar_datos():
     url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
     df = pd.read_csv(url)
-    df = df.fillna("-") # Limpiamos celdas vacías
+    df = df.fillna("-") 
     return df
 
-with st.spinner('Sincronizando con base de datos central...'):
+with st.spinner('Sincronizando datos...'):
     try:
-        buques = cargar_datos_sheets()
+        buques = cargar_datos()
     except Exception as e:
-        st.error("⚠️ Error de conexión con la base central.")
+        st.error("⚠️ Error de conexión.")
         st.stop()
 
-
 # ==========================================
-# VENTANA MODAL (LA FICHA DEL BUQUE)
+# VENTANA MODAL (FICHA TÉCNICA)
 # ==========================================
 @st.dialog("🪪 Ficha Técnica del Buque", width="large")
 def abrir_modal_buque(datos_buque):
-    col_encabezado1, col_encabezado2 = st.columns([3, 1])
-    with col_encabezado1:
-        st.markdown(f"<h2 style='color: #1e3a8a; margin-bottom: 0;'>{datos_buque.get('Nombre', '-')}</h2>", unsafe_allow_html=True)
-        st.markdown(f"**Bandera:** {datos_buque.get('Bandera', '-')} | **Tipo:** {datos_buque.get('Tipo', '-')}")
-    with col_encabezado2:
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.markdown(f"<h3 style='color: #0f172a; margin-bottom: 0;'>{datos_buque.get('Nombre', '-')}</h3>", unsafe_allow_html=True)
+        st.caption(f"Bandera: {datos_buque.get('Bandera', '-')} | Tipo: {datos_buque.get('Tipo', '-')}")
+    with c2:
         if str(datos_buque.get('Buque de interes', '')).upper() == "SI":
-            st.error("🚨 BUQUE DE INTERÉS")
+            st.error("🚨 ALERTA")
         else:
-            st.success("✅ Standard")
+            st.success("✅ OK")
             
     st.divider()
     
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("#### 📡 Identificación")
+    col_id, col_tec = st.columns(2)
+    with col_id:
         st.write(f"**MMSI:** {datos_buque.get('MMSI', '-')}")
         st.write(f"**IMO:** {datos_buque.get('IMO', '-')}")
         st.write(f"**Señal Distintiva:** {datos_buque.get('Indicativo de llamada', '-')}")
-        
-    with c2:
-        st.markdown("#### 📏 Características")
+    with col_tec:
         st.write(f"**Eslora:** {datos_buque.get('Eslora', '-')} m")
         st.write(f"**Arqueo Bruto:** {datos_buque.get('Arqueo bruto', '-')} GT")
-        st.write(f"**Construcción:** {datos_buque.get('Fecha de construcción', '-')}")
-        
-    with c3:
-        st.markdown("#### 🏢 Administración")
-        st.write(f"**Propietario:** {datos_buque.get('Propietario_id', '-')}")
-        st.write(f"**Nivel de Riesgo:** {datos_buque.get('Riesgo', '-')}")
-        st.write(f"**Última Modif.:** {datos_buque.get('Fecha de modificación', '-')}")
+        st.write(f"**Riesgo:** {datos_buque.get('Riesgo', '-')}")
     
-    st.divider()
-    if st.button("Cerrar Ficha", use_container_width=True):
+    if st.button("Cerrar", use_container_width=True):
         st.rerun()
 
-
 # ==========================================
-# BARRA LATERAL (MENU)
+# BARRA LATERAL (SIDEBAR)
 # ==========================================
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Flag_of_Argentina.svg/1200px-Flag_of_Argentina.svg.png", width=80)
-    st.markdown(f"Hola, **{st.session_state['usuario_actual'].capitalize()}**")
-    st.markdown("---")
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Flag_of_Argentina.svg/1200px-Flag_of_Argentina.svg.png", width=60)
+    st.markdown(f"**Operador:** {st.session_state['usuario_actual'].capitalize()}")
+    st.divider()
     menu = st.radio(
-        "Navegación Principal",
-        ["📊 Panel de Estadísticas", "📋 Directorio de Buques", "🤖 Agente IA"],
-        index=0
+        "Menú Principal",
+        ["📊 Panel de Control", "📋 Base de Datos", "🤖 Analista IA"]
     )
-    st.markdown("---")
+    st.divider()
     if st.button("Cerrar Sesión"):
         st.session_state["password_correct"] = False
         st.rerun()
 
-
 # ==========================================
-# MÓDULO 1: PANEL DE ESTADÍSTICAS
+# MÓDULO 1: PANEL DE CONTROL (DASHBOARD)
 # ==========================================
-if menu == "📊 Panel de Estadísticas":
-    st.title("📊 Panel de Inteligencia Marítima")
+if menu == "📊 Panel de Control":
+    st.markdown("<h2 style='color: #0f172a;'>Panel de Inteligencia Marítima</h2>", unsafe_allow_html=True)
     
-    # Filtros exclusivos para los gráficos
-    with st.expander("⚙️ Filtros para los Gráficos", expanded=False):
-        f_bandera = st.multiselect("Filtrar por Bandera:", buques["Bandera"].unique() if "Bandera" in buques.columns else [])
-    
-    # Aplicar filtro a gráficos
-    datos_graficos = buques.copy()
-    if f_bandera:
-        datos_graficos = datos_graficos[datos_graficos["Bandera"].isin(f_bandera)]
-
-    # Métricas
+    # --- FILA 1: KPIs ---
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Buques en Vista", len(datos_graficos))
-    if "Bandera" in datos_graficos.columns:
-        col2.metric("Banderas Distintas", datos_graficos[datos_graficos["Bandera"] != "-"]["Bandera"].nunique())
-    if "Tipo" in datos_graficos.columns:
-        col3.metric("Tipos de Buque", datos_graficos[datos_graficos["Tipo"] != "-"]["Tipo"].nunique())
-    if "Buque de interes" in datos_graficos.columns:
-        col4.metric("Buques de Interés", len(datos_graficos[datos_graficos["Buque de interes"].astype(str).str.upper() == "SI"]))
+    col1.metric("Total Buques Registrados", len(buques))
+    if "Bandera" in buques.columns:
+        col2.metric("Banderas Operativas", buques[buques["Bandera"] != "-"]["Bandera"].nunique())
+    if "Tipo" in buques.columns:
+        col3.metric("Clasificaciones (Tipos)", buques[buques["Tipo"] != "-"]["Tipo"].nunique())
+    if "Buque de interes" in buques.columns:
+        col4.metric("Buques de Interés (SI)", len(buques[buques["Buque de interes"].astype(str).str.upper() == "SI"]))
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Gráficos
-    col_g1, col_g2 = st.columns([1, 1])
+    # --- FILA 2: GRÁFICO PRINCIPAL ANCHO ---
+    if "Bandera" in buques.columns:
+        st.markdown("#### Volumen de Flota por Bandera (Top 15)")
+        top_banderas = buques[buques["Bandera"] != "-"]["Bandera"].value_counts().head(15).reset_index()
+        top_banderas.columns = ["Bandera", "Cantidad"]
+        
+        # Gráfico de barras estilizado
+        fig_bar = px.bar(
+            top_banderas, x='Bandera', y='Cantidad', 
+            color='Cantidad', color_continuous_scale='Blues',
+            text_auto=True
+        )
+        fig_bar.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)', 
+            paper_bgcolor='rgba(0,0,0,0)',
+            margin=dict(t=20, l=10, r=10, b=40),
+            coloraxis_showscale=False,
+            xaxis_title="", yaxis_title="Cantidad de Buques"
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    # --- FILA 3: GRAFICOS SECUNDARIOS ---
+    col_pie, col_tabla = st.columns([1.2, 1])
     
-    with col_g1:
-        st.markdown("**Jerarquía: Banderas y Tipos de Buque**")
-        if "Bandera" in datos_graficos.columns and "Tipo" in datos_graficos.columns:
-            # Gráfico Sunburst (Anillos) agrupando datos
-            df_agrupado = datos_graficos[datos_graficos["Bandera"] != "-"].groupby(['Bandera', 'Tipo']).size().reset_index(name='Cantidad')
-            fig_sun = px.sunburst(df_agrupado, path=['Bandera', 'Tipo'], values='Cantidad', color='Bandera')
-            fig_sun.update_layout(margin=dict(t=10, l=10, r=10, b=10))
-            st.plotly_chart(fig_sun, use_container_width=True)
+    with col_pie:
+        if "Tipo" in buques.columns:
+            st.markdown("#### Composición por Tipo de Buque")
+            conteo_tipos = buques[buques["Tipo"] != "-"]["Tipo"].value_counts().reset_index()
+            conteo_tipos.columns = ["Tipo", "Cantidad"]
             
-    with col_g2:
-        st.markdown("**Top 10 Banderas con Mayor Flota**")
-        if "Bandera" in datos_graficos.columns:
-            top_banderas = datos_graficos[datos_graficos["Bandera"] != "-"]["Bandera"].value_counts().head(10).reset_index()
-            top_banderas.columns = ["Bandera", "Cantidad"]
-            fig_bar = px.bar(top_banderas, x='Bandera', y='Cantidad', text_auto=True, color='Bandera')
-            fig_bar.update_layout(margin=dict(t=10, l=10, r=10, b=10), showlegend=False)
-            st.plotly_chart(fig_bar, use_container_width=True)
-
+            fig_pie = px.pie(
+                conteo_tipos, values='Cantidad', names='Tipo', 
+                hole=0.5, color_discrete_sequence=px.colors.sequential.Ocean
+            )
+            fig_pie.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                margin=dict(t=20, l=0, r=0, b=0),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+    with col_tabla:
+        if "Buque de interes" in buques.columns:
+            st.markdown("#### 🚨 Alerta: Buques de Interés")
+            buques_alerta = buques[buques["Buque de interes"].astype(str).str.upper() == "SI"]
+            if not buques_alerta.empty:
+                # Mostramos un dataframe limpio solo con los datos clave
+                cols_alerta = [c for c in ["Nombre", "Bandera", "MMSI"] if c in buques.columns]
+                st.dataframe(buques_alerta[cols_alerta], use_container_width=True, hide_index=True, height=350)
+            else:
+                st.success("No hay buques marcados como de interés actualmente.")
 
 # ==========================================
-# MÓDULO 2: DIRECTORIO DE BUQUES
+# MÓDULO 2: BASE DE DATOS INTERACTIVA
 # ==========================================
-elif menu == "📋 Directorio de Buques":
-    st.title("📋 Directorio General de Buques")
-    st.info("💡 **Instrucción:** Haz clic en la casilla a la izquierda de cualquier buque para abrir su ficha completa.")
+elif menu == "📋 Base de Datos":
+    st.markdown("<h2 style='color: #0f172a;'>Directorio General de Buques</h2>", unsafe_allow_html=True)
     
-    # Buscador Global (Busca en TODAS las columnas)
-    busqueda_global = st.text_input("🔍 Buscador Global (Escriba un Nombre, IMO, MMSI, Bandera, etc.):", placeholder="Ej: LU RONG YUAN, 412331182, POTERO...")
-    
+    busqueda = st.text_input("🔍 Buscar en toda la base de datos (Nombre, IMO, Señal, etc.):")
     b_filtrados = buques.copy()
     
-    if busqueda_global:
-        # Crea una máscara que busca el texto en toda la base de datos convertida a texto
-        mask = b_filtrados.astype(str).apply(lambda x: x.str.contains(busqueda_global, case=False, na=False)).any(axis=1)
+    if busqueda:
+        mask = b_filtrados.astype(str).apply(lambda x: x.str.contains(busqueda, case=False, na=False)).any(axis=1)
         b_filtrados = b_filtrados[mask]
         
-    st.caption(f"Mostrando {len(b_filtrados)} resultados.")
+    st.caption(f"Registros encontrados: {len(b_filtrados)}")
 
-    # La Tabla con selección interactiva (Esta es la nueva magia de Streamlit)
-    columnas_mostrar = [col for col in ["Nombre", "Bandera", "Tipo", "MMSI", "IMO", "Riesgo"] if col in b_filtrados.columns]
+    cols_mostrar = [c for c in ["Nombre", "Bandera", "Tipo", "MMSI", "IMO", "Riesgo"] if c in b_filtrados.columns]
     
-    evento_seleccion = st.dataframe(
-        b_filtrados[columnas_mostrar],
-        use_container_width=True,
-        hide_index=True,
-        height=500,
-        on_select="rerun", # Esto recarga la app al hacer clic
-        selection_mode="single-row" # Solo permite seleccionar uno a la vez
+    evento = st.dataframe(
+        b_filtrados[cols_mostrar],
+        use_container_width=True, hide_index=True, height=500,
+        on_select="rerun", selection_mode="single-row"
     )
     
-    # Si el usuario seleccionó una fila de la tabla, se abre la ventana modal
-    if evento_seleccion and len(evento_seleccion.selection.rows) > 0:
-        indice_fila = evento_seleccion.selection.rows[0]
-        # Recuperamos todos los datos de ese buque (incluyendo las columnas ocultas)
-        buque_seleccionado = b_filtrados.iloc[indice_fila]
-        abrir_modal_buque(buque_seleccionado)
-
+    if evento and len(evento.selection.rows) > 0:
+        indice = evento.selection.rows[0]
+        abrir_modal_buque(b_filtrados.iloc[indice])
 
 # ==========================================
 # MÓDULO 3: AGENTE IA
 # ==========================================
-elif menu == "🤖 Agente IA":
-    st.title("🤖 Centro de Análisis IA")
+elif menu == "🤖 Analista IA":
+    st.markdown("<h2 style='color: #0f172a;'>Centro de Análisis IA</h2>", unsafe_allow_html=True)
     
     col_ia1, col_ia2 = st.columns([1, 2.5])
     with col_ia1:
-        st.image("https://cdn-icons-png.flaticon.com/512/8649/8649603.png", width=150)
-        st.markdown("### Asistente Virtual")
-        st.info("Conectado a la base de datos central en tiempo real.")
+        st.image("https://cdn-icons-png.flaticon.com/512/8649/8649603.png", width=120)
+        st.info("Pregúntale al agente sobre tendencias, resúmenes o cruce de datos de los buques.")
         
     with col_ia2:
-        columnas_clave = [col for col in ["Nombre", "MMSI", "Bandera", "Tipo", "Riesgo", "Buque de interes"] if col in buques.columns]
-        datos_para_ia = buques[columnas_clave].to_csv(index=False)
+        cols_clave = [c for c in ["Nombre", "MMSI", "Bandera", "Tipo", "Riesgo", "Buque de interes"] if c in buques.columns]
+        datos_ia = buques[cols_clave].to_csv(index=False)
 
-        with st.container(border=True):
-            pregunta_usuario = st.text_area("¿Qué deseas investigar?", height=120, placeholder="Ejemplo: Resume la cantidad de buques por bandera y dime si hay algún buque de interés.")
-            
-            if st.button("🧠 Ejecutar Análisis", type="primary", use_container_width=True):
-                if pregunta_usuario:
-                    with st.spinner("El agente está analizando los registros..."):
-                        try:
-                            prompt = f"Eres un analista de control marítimo. Base de datos:\n{datos_para_ia}\n\nConsulta: {pregunta_usuario}\nResponde SOLO basado en los datos de forma profesional."
-                            respuesta = modelo_ia.generate_content(prompt)
-                            st.success("Análisis completado")
-                            st.markdown(f"**Resultado:**\n\n> {respuesta.text}")
-                        except Exception as e:
-                            st.error(f"Error IA: {e}")
-                else:
-                    st.warning("Por favor, escribe una consulta.")
+        pregunta = st.text_area("¿Qué deseas investigar?", height=100)
+        
+        if st.button("🧠 Ejecutar Análisis", type="primary", use_container_width=True):
+            if pregunta:
+                with st.spinner("Procesando..."):
+                    try:
+                        prompt = f"Eres un analista naval. Base de datos:\n{datos_ia}\n\nConsulta: {pregunta}\nResponde SOLO basado en los datos, sé conciso y profesional."
+                        respuesta = modelo_ia.generate_content(prompt)
+                        st.success("Análisis completado")
+                        st.markdown(f"**Resultado:**\n\n> {respuesta.text}")
+                    except Exception as e:
+                        st.error(f"Error IA: {e}")
+            else:
+                st.warning("Escribe una consulta.")
