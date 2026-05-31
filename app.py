@@ -11,7 +11,7 @@ from io import StringIO
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Portal RBPE", page_icon="⚓", layout="wide", initial_sidebar_state="expanded")
 
-# --- CSS: ESTILO DARK PREMIUM COMPACTO Y ULTRA-RESPONSIVO ---
+# --- CSS: ESTILO DARK PREMIUM COMPACTO, RESPONSIVO Y MODERNO ---
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
@@ -60,13 +60,42 @@ st.markdown("""
         margin-top: 2rem;
     }
 
-    /* Contenedores de gráficos idénticos, transparentes y alineados */
+    /* Contenedores de gráficos idénticos con estilo de tarjeta premium */
     div[data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: rgba(18, 22, 32, 0.45) !important;
+        background-color: #121620 !important;
         border: 1px solid #21262D !important;
         border-radius: 12px !important;
-        padding: 18px !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
+        padding: 20px !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.4) !important;
+    }
+
+    /* Estilo de Tarjeta (Card) para el Directorio de Buques */
+    .buque-card {
+        background-color: #121620;
+        border: 1px solid #21262D;
+        border-radius: 12px;
+        padding: 1.25rem;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+        margin-bottom: 1.2rem;
+        transition: transform 0.2s, border-color 0.2s;
+    }
+    .buque-card:hover {
+        transform: translateY(-3px);
+        border-color: #3B82F6;
+    }
+    
+    .buque-card-interes {
+        background-color: #121620;
+        border: 1.5px solid #EF4444;
+        border-radius: 12px;
+        padding: 1.25rem;
+        box-shadow: 0 4px 15px rgba(239, 68, 68, 0.15);
+        margin-bottom: 1.2rem;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .buque-card-interes:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 20px rgba(239, 68, 68, 0.3);
     }
 
     /* Ajustes Chatbot nativo de Streamlit */
@@ -87,6 +116,14 @@ st.markdown("""
         border-color: #21262D !important;
         border-radius: 12px !important;
         background-color: #121620 !important;
+    }
+    
+    /* Distribuidor de elementos verticales para el Sidebar */
+    .sidebar-content {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        height: 85vh;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -234,62 +271,72 @@ def abrir_modal_buque(b):
     
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Cerrar Ficha", use_container_width=True):
+        st.session_state.selected_buque = None
         st.rerun()
+
+
+# --- MANEJADOR DE DIÁLOGO DE SESIÓN ACTIVO ---
+# Esto garantiza que el modal cargue perfectamente desde cualquier acción de la interfaz sin cerrarse automáticamente.
+if "selected_buque" in st.session_state and st.session_state.selected_buque is not None:
+    abrir_modal_buque(st.session_state.selected_buque)
 
 
 # ==========================================
 # BARRA LATERAL (SIDEBAR REDISEÑADO CON UX PREMIUM)
 # ==========================================
 with st.sidebar:
-    st.markdown("<br>", unsafe_allow_html=True)
-    # Escudo Nacional / Logotipo
-    col_esc, col_title = st.columns([1, 3.2])
-    with col_esc:
-        st.markdown("""
-        <div style="background-color:#1E3A8A; width:45px; height:45px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">⚓</div>
-        """, unsafe_allow_html=True)
-    with col_title:
-        st.markdown("""
-        <h3 style="margin:0; color:white; line-height:1.2; font-weight: 700; font-size: 1.3rem;">Portal <span style="color:#3B82F6;">RBPE</span></h3>
-        <span style="color: #8E9CAE; font-size: 0.72rem; letter-spacing: 0.5px;">CONTROL MARÍTIMO</span>
-        """, unsafe_allow_html=True)
-        
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-content">', unsafe_allow_html=True)
     
-    # Perfil Operador
-    st.markdown(f"""
-    <div style="background-color: #121620; border: 1px solid #21262D; border-radius: 12px; padding: 12px 15px; display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
-        <div style="background-color: #21262D; border-radius: 50%; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 18px;">👤</div>
-        <div>
-            <p style="margin:0; color:white; font-size:0.85rem; font-weight:700; text-transform: capitalize;">{st.session_state['usuario_actual']}</p>
-            <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
-                <span style="background-color: #10B981; width: 8px; height: 8px; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px #10B981;"></span>
-                <span style="color: #10B981; font-size: 0.75rem; font-weight: 600;">Online</span>
+    # Bloque Superior: Logo, Identidad y Operador
+    with st.container():
+        st.markdown("<br>", unsafe_allow_html=True)
+        col_esc, col_title = st.columns([1, 3.2])
+        with col_esc:
+            st.markdown("""
+            <div style="background-color:#1E3A8A; width:45px; height:45px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">⚓</div>
+            """, unsafe_allow_html=True)
+        with col_title:
+            st.markdown("""
+            <h3 style="margin:0; color:white; line-height:1.2; font-weight: 700; font-size: 1.3rem;">Portal <span style="color:#3B82F6;">RBPE</span></h3>
+            <span style="color: #8E9CAE; font-size: 0.72rem; letter-spacing: 0.5px;">CONTROL MARÍTIMO</span>
+            """, unsafe_allow_html=True)
+            
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        st.markdown(f"""
+        <div style="background-color: #121620; border: 1px solid #21262D; border-radius: 12px; padding: 12px 15px; display: flex; align-items: center; gap: 12px; margin-bottom: 15px;">
+            <div style="background-color: #21262D; border-radius: 50%; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 18px;">👤</div>
+            <div>
+                <p style="margin:0; color:white; font-size:0.85rem; font-weight:700; text-transform: capitalize;">{st.session_state['usuario_actual']}</p>
+                <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+                    <span style="background-color: #10B981; width: 8px; height: 8px; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px #10B981;"></span>
+                    <span style="color: #10B981; font-size: 0.75rem; font-weight: 600;">Online</span>
+                </div>
             </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+        
+        # Menú interactivo
+        menu = option_menu(
+            menu_title=None,
+            options=["Panel de Control", "Base de Datos", "Analista IA"],
+            icons=["grid-fill", "server", "cpu-fill"],
+            default_index=0,
+            styles={
+                "container": {"padding": "0!important", "background-color": "transparent"},
+                "icon": {"color": "#60A5FA", "font-size": "18px"}, 
+                "nav-link": {"color": "#8E9CAE", "font-size": "14px", "text-align": "left", "margin": "8px 0", "border-radius": "8px", "padding": "10px 15px"},
+                "nav-link-selected": {"background-color": "#2563EB", "color": "white", "font-weight": "700"},
+            }
+        )
     
-    # Menú
-    menu = option_menu(
-        menu_title=None,
-        options=["Panel de Control", "Base de Datos", "Analista IA"],
-        icons=["grid-fill", "server", "cpu-fill"],
-        default_index=0,
-        styles={
-            "container": {"padding": "0!important", "background-color": "transparent"},
-            "icon": {"color": "#60A5FA", "font-size": "18px"}, 
-            "nav-link": {"color": "#8E9CAE", "font-size": "14px", "text-align": "left", "margin": "8px 0", "border-radius": "8px", "padding": "10px 15px"},
-            "nav-link-selected": {"background-color": "#2563EB", "color": "white", "font-weight": "700"},
-        }
-    )
-    
-    # Espaciado dinámico UX para empujar el botón de cierre a la zona inferior de forma fluida
-    st.markdown("<div style='height: 18vh;'></div>", unsafe_allow_html=True)
-    
-    if st.button("🚪 Cerrar Sesión", use_container_width=True):
-        st.session_state.clear()
-        st.rerun()
+    # Bloque Inferior: Botón de Cerrar Sesión perfectamente alineado abajo
+    with st.container():
+        if st.button("🚪 Cerrar Sesión", use_container_width=True):
+            st.session_state.clear()
+            st.rerun()
+            
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ==========================================
@@ -327,9 +374,12 @@ if menu == "Panel de Control":
                 conteo_banderas = pesqueros_filtrados["Bandera"].value_counts().reset_index()
                 conteo_banderas.columns = ["Bandera", "Cantidad"]
                 
+                # Paleta de colores Hexadecimal Premium garantizada (evita el error Cyan_r)
+                paleta_azul = ["#00e5ff", "#00b0ff", "#2979ff", "#3d5afe", "#60a5fa", "#3b82f6", "#2563eb", "#1d4ed8"]
+                
                 fig_bar = px.bar(
                     conteo_banderas, x='Bandera', y='Cantidad', 
-                    color='Cantidad', color_continuous_scale='Blues', text_auto=True
+                    color='Cantidad', color_continuous_scale=paleta_azul, text_auto=True
                 )
                 fig_bar.update_layout(
                     template='plotly_dark',
@@ -354,9 +404,12 @@ if menu == "Panel de Control":
                 conteo_tipos = pesqueros_filtrados["Tipo"].value_counts().reset_index()
                 conteo_tipos.columns = ["Tipo", "Cantidad"]
                 
+                # Lista segura y de alto contraste para el gráfico de torta de pesqueros
+                colores_pesqueros = ["#22d3ee", "#06b6d4", "#0891b2", "#0e7490", "#155e75"]
+                
                 fig_pie = px.pie(
                     conteo_tipos, values='Cantidad', names='Tipo', hole=0.6,
-                    color_discrete_sequence=px.colors.sequential.Cyan[::-1]
+                    color_discrete_sequence=colores_pesqueros
                 )
                 fig_pie.update_layout(
                     template='plotly_dark',
@@ -374,7 +427,7 @@ if menu == "Panel de Control":
 
 
 # ==========================================
-# MÓDULO 2: BASE DE DATOS (REDISEÑO: SIN TABLAS EXCEL, TARJETAS PREMIUM)
+# MÓDULO 2: BASE DE DATOS (TARJETAS CON PAGINACIÓN INTELIGENTE)
 # ==========================================
 elif menu == "Base de Datos":
     st.markdown("<h2 style='color: #F8FAFC; margin-bottom: 15px; font-weight: 700;'>Directorio General Táctico</h2>", unsafe_allow_html=True)
@@ -388,11 +441,26 @@ elif menu == "Base de Datos":
         mask = b_filtrados.astype(str).apply(lambda x: x.str.contains(busqueda, case=False, na=False)).any(axis=1)
         b_filtrados = b_filtrados[mask]
 
-    st.markdown(f"<p style='color: #3B82F6; font-size: 0.9rem; font-weight: 600; margin-bottom: 20px;'>{len(b_filtrados)} Buques Activos Identificados</p>", unsafe_allow_html=True)
+    total_resultados = len(b_filtrados)
+    st.markdown(f"<p style='color: #3B82F6; font-size: 0.95rem; font-weight: 600; margin-bottom: 20px;'>{total_resultados} Buques Activos Identificados</p>", unsafe_allow_html=True)
 
-    # Renderizado en cuadrícula responsive de Tarjetas Premium (3 por fila)
+    # PAGINACIÓN DE TARJETAS (Evita scroll infinito y mejora el rendimiento drásticamente)
+    cartas_por_pagina = 12
+    paginas_totales = max(1, (total_resultados + cartas_por_pagina - 1) // cartas_por_pagina)
+    
+    # Selector de páginas elegante
+    col_pag1, col_pag2 = st.columns([8, 2])
+    with col_pag2:
+        pagina_actual = st.number_input(f"Página (1 de {paginas_totales})", min_value=1, max_value=paginas_totales, value=1, step=1)
+        
+    inicio_idx = (pagina_actual - 1) * cartas_por_pagina
+    fin_idx = min(inicio_idx + cartas_por_pagina, total_resultados)
+    
+    b_pagina = b_filtrados.iloc[inicio_idx:fin_idx]
+
+    # Renderizado en cuadrícula de tarjetas (3 por fila)
     num_columnas = 3
-    rows = [b_filtrados.iloc[i:i + num_columnas] for i in range(0, len(b_filtrados), num_columnas)]
+    rows = [b_pagina.iloc[i:i + num_columnas] for i in range(0, len(b_pagina), num_columnas)]
 
     for row_df in rows:
         cols_grid = st.columns(num_columnas)
@@ -400,32 +468,31 @@ elif menu == "Base de Datos":
             with cols_grid[i]:
                 # Estilo de Alerta Visual en la tarjeta
                 es_interes = str(b.get('Buque de interes', '')).upper() == "SI"
-                borde_tarjeta = "#EF4444" if es_interes else "#21262D"
-                badge_html = '<span style="background-color: rgba(239, 68, 68, 0.2); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;">INTERÉS</span>' if es_interes else '<span style="background-color: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;">STANDARD</span>'
+                card_class = "buque-card-interes" if es_interes else "buque-card"
+                badge_html = '<span style="background-color: rgba(239, 68, 68, 0.2); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 2.5px 10px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;">INTERÉS</span>' if es_interes else '<span style="background-color: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); padding: 2.5px 10px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;">STANDARD</span>'
                 
                 # HTML de la Tarjeta Táctica
                 st.markdown(f"""
-                <div style="background-color: #121620; border: 1px solid {borde_tarjeta}; border-radius: 12px; padding: 1.2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4); min-height: 200px; display: flex; flex-col; justify-content: space-between;">
-                    <div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                            <h4 style="color: #60A5FA; margin: 0; font-size: 1.15rem; font-weight: 700; font-family: monospace;">🚢 {b.get('Nombre', '-')}</h4>
-                            {badge_html}
-                        </div>
-                        <div style="font-size: 0.85rem; color: #8E9CAE; line-height: 1.5; margin-bottom: 10px;">
-                            <strong>Bandera:</strong> <span style="color: white;">{b.get('Bandera', '-')}</span><br>
-                            <strong>Tipo de Pesca:</strong> <span style="color: white;">{b.get('Tipo', '-')}</span><br>
-                            <strong>Riesgo:</strong> <span style="color: white;">{b.get('Riesgo', '-')}</span>
-                        </div>
-                        <div style="border-top: 1px solid #21262D; padding-top: 8px; font-size: 0.78rem; font-family: monospace; color: #64748B;">
-                            MMSI: {b.get('MMSI', '-')} &nbsp;|&nbsp; IMO: {b.get('IMO', '-')}
-                        </div>
+                <div class="{card_class}">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h4 style="color: #60A5FA; margin: 0; font-size: 1.15rem; font-weight: 700; font-family: monospace;">🚢 {b.get('Nombre', '-')}</h4>
+                        {badge_html}
+                    </div>
+                    <div style="font-size: 0.85rem; color: #8E9CAE; line-height: 1.5; margin-bottom: 12px;">
+                        <strong>Bandera:</strong> <span style="color: white; font-weight: 600;">{b.get('Bandera', '-')}</span><br>
+                        <strong>Tipo de Pesca:</strong> <span style="color: white;">{b.get('Tipo', '-')}</span><br>
+                        <strong>Riesgo Táctico:</strong> <span style="color: white;">{b.get('Riesgo', '-')}</span>
+                    </div>
+                    <div style="border-top: 1px solid #21262D; padding-top: 10px; font-size: 0.78rem; font-family: monospace; color: #64748B;">
+                        MMSI: {b.get('MMSI', '-')} &nbsp;|&nbsp; IMO: {b.get('IMO', '-')}
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Botón de apertura de ficha técnica completa (vinculado al modal)
+                # Botón de apertura de ficha técnica completa (vinculado de manera segura al session_state)
                 if st.button(f"🔎 Ficha Táctica - {b.get('Nombre')}", key=f"btn_{b.get('MMSI')}", use_container_width=True):
-                    abrir_modal_buque(b)
+                    st.session_state.selected_buque = b
+                    st.rerun()
 
 
 # ==========================================
@@ -442,7 +509,7 @@ elif menu == "Analista IA":
     <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid #21262D;">
         <div style="background-color: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; font-size: 22px; box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);">🤖</div>
         <div>
-            <h2 style="color: #F8FAFC; margin: 0; font-size: 1.4rem; font-weight: 700;">Agente Analista Tactico RBPE</h2>
+            <h2 style="color: #F8FAFC; margin: 0; font-size: 1.4rem; font-weight: 700;">Agente Analista Táctico RBPE</h2>
             <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
                 <span style="background-color: #10B981; width: 6px; height: 6px; border-radius: 50%; display: inline-block;"></span>
                 <span style="color: #10B981; font-size: 0.75rem; font-weight: 600;">Modo Simulación de Escritura Activo</span>
@@ -541,7 +608,7 @@ elif menu == "Analista IA":
                     INSTRUCCIONES CLAVE DE OPERACIÓN:
                     1. Si el usuario te pide datos temporales, antigüedad o años de construcción, DEBES calcularlo dinámicamente usando la columna 'Fecha de construccion' de manera matemática e inteligente basándote en que el año actual es 2026.
                     
-                    2. Si el usuario te ordena CAMBIAR, ACTUALIZAR o MODIFICAR el estado de un buque (ej: "Pon en riesgo Alto el buque RIO SOLIS III"), debes identificar su MMSI en la base de datos y adjuntar al FINAL de tu respuesta el siguiente comando estricto de actualización para que el frontend lo procese en la simulación:
+                    2. Si el usuario te ordena CAMBIAR, ACTUALIZAR o MODIFICAR el estado de un buque (ej: "Pon en riesgo Alto el buque RIO SOLIS III"), debes identificar su MMSI in the base de datos y adjuntar al FINAL de tu respuesta el siguiente comando estricto de actualización para que el frontend lo procese en la simulación:
                        [DB_ACTION: UPDATE KEY="mmsi_del_buque" FIELD="nombre_campo_normalizado" VALUE="nuevo_valor"]
                        
                        Los nombres de los campos válidos para actualizar son: 'Riesgo', 'Buque de interes'
