@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from streamlit_option_menu import option_menu
 import re
+import json
 from io import StringIO
 
 # --- CONFIGURACIÓN DE PÁGINA ---
@@ -41,15 +42,6 @@ st.markdown("""
     .stTextInput input:focus, .stTextArea textarea:focus {
         border-color: #3B82F6 !important;
         box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
-    }
-
-    /* Estilización avanzada y pulida de la Tabla (Dataframe) */
-    [data-testid="stDataFrame"] {
-        background-color: #121620 !important;
-        border-radius: 12px !important;
-        padding: 8px !important;
-        border: 1px solid #21262D !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3) !important;
     }
 
     /* Ocultar bordes innecesarios de botones nativos */
@@ -169,7 +161,9 @@ def normalizar_columnas(df):
         'eslora': 'Eslora',
         'arqueo bruto': 'Arqueo bruto', 'arqueo': 'Arqueo bruto',
         'riesgo': 'Riesgo',
-        'buque de interes': 'Buque de interes', 'buque de interés': 'Buque de interes', 'interes': 'Buque de interes'
+        'buque de interes': 'Buque de interes', 'buque de interés': 'Buque de interes', 'interes': 'Buque de interes',
+        'propietario_id': 'Propietario_id', 'propietario': 'Propietario_id',
+        'fecha de construccion': 'Fecha de construccion', 'fecha de construcción': 'Fecha de construccion', 'fecha_construccion': 'Fecha de construccion', 'año': 'Fecha de construccion', 'año_construccion': 'Fecha de construccion'
     }
     nuevos_nombres = {}
     for col in df.columns:
@@ -187,12 +181,16 @@ def cargar_datos():
     df = normalizar_columnas(df) # Normalizamos de forma proactiva
     return df
 
-with st.spinner('Actualizando base de datos táctica...'):
-    try:
-        buques = cargar_datos()
-    except Exception as e:
-        st.error("⚠️ Error de conexión con el repositorio de datos.")
-        st.stop()
+# Carga inicial y persistencia en session_state para permitir modificaciones interactivas
+if "buques_df" not in st.session_state:
+    with st.spinner('Actualizando base de datos táctica...'):
+        try:
+            st.session_state.buques_df = cargar_datos()
+        except Exception as e:
+            st.error("⚠️ Error de conexión con el repositorio de datos.")
+            st.stop()
+
+buques = st.session_state.buques_df
 
 
 # ==========================================
@@ -323,7 +321,6 @@ if menu == "Panel de Control":
     col_graf1, col_graf2 = st.columns([1, 1])
     
     with col_graf1:
-        # Contenedor con borde nativo estilizado por CSS a semi-transparente
         with st.container(border=True):
             st.markdown("<h4 style='color: #E2E8F0; margin: 0 0 10px 0; font-weight: 600; font-size: 1.1rem; border-bottom: 1px solid #21262D; padding-bottom: 8px;'>Flota Pesquera por Bandera</h4>", unsafe_allow_html=True)
             if not pesqueros_filtrados.empty:
@@ -336,7 +333,7 @@ if menu == "Panel de Control":
                 )
                 fig_bar.update_layout(
                     template='plotly_dark',
-                    paper_bgcolor='rgba(0,0,0,0)', # Transparente para respetar el Glassmorphic
+                    paper_bgcolor='rgba(0,0,0,0)', 
                     plot_bgcolor='rgba(0,0,0,0)',
                     margin=dict(t=15, l=15, r=15, b=20),
                     height=330,
@@ -359,11 +356,11 @@ if menu == "Panel de Control":
                 
                 fig_pie = px.pie(
                     conteo_tipos, values='Cantidad', names='Tipo', hole=0.6,
-                    color_discrete_sequence=px.colors.sequential.Cyan_r
+                    color_discrete_sequence=px.colors.sequential.Cyan[::-1]
                 )
                 fig_pie.update_layout(
                     template='plotly_dark',
-                    paper_bgcolor='rgba(0,0,0,0)', # Transparente para respetar el Glassmorphic
+                    paper_bgcolor='rgba(0,0,0,0)', 
                     plot_bgcolor='rgba(0,0,0,0)',
                     margin=dict(t=15, l=15, r=15, b=15),
                     height=330,
@@ -377,81 +374,67 @@ if menu == "Panel de Control":
 
 
 # ==========================================
-# MÓDULO 2: BASE DE DATOS INTERACTIVA (ESTILIZADA SIN COLUMNAS SQUISHED)
+# MÓDULO 2: BASE DE DATOS (REDISEÑO: SIN TABLAS EXCEL, TARJETAS PREMIUM)
 # ==========================================
 elif menu == "Base de Datos":
-    st.markdown("<h2 style='color: #F8FAFC; margin-bottom: 20px; font-weight: 700;'>Directorio General de Buques</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color: #F8FAFC; margin-bottom: 15px; font-weight: 700;'>Directorio General Táctico</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='color: #8E9CAE; font-size: 0.95rem; margin-top: -10px; margin-bottom: 25px;'>Visualización unificada de la flota extranjera como perfiles tácticos individuales de combate/monitoreo.</p>", unsafe_allow_html=True)
     
-    # Campo de búsqueda directa y limpia de ancho completo (Sin contenedor innecesario de lupa)
-    busqueda = st.text_input("🔍 Buscar Buque", placeholder="Escriba un Nombre, MMSI, IMO, Bandera o Tipo de pesquero...", label_visibility="collapsed")
+    # Campo de búsqueda limpia de ancho completo
+    busqueda = st.text_input("🔍 Buscador Táctico", placeholder="Escriba un Nombre, MMSI, IMO, Bandera o Propietario para filtrar los perfiles...", label_visibility="collapsed")
     
     b_filtrados = buques.copy()
     if busqueda:
         mask = b_filtrados.astype(str).apply(lambda x: x.str.contains(busqueda, case=False, na=False)).any(axis=1)
         b_filtrados = b_filtrados[mask]
-        
-    st.markdown(f"<p style='color: #8E9CAE; font-size: 0.9rem; margin-bottom: 10px;'>Mostrando {len(b_filtrados)} registros encontrados en la base central.</p>", unsafe_allow_html=True)
 
-    # Columnas que se mostrarán en la tabla principal de manera limpia
-    cols_mostrar = [c for c in ["Nombre", "Bandera", "Tipo", "MMSI", "IMO", "Riesgo"] if c in b_filtrados.columns]
-    
-    # DEFINICIÓN DE CONFIGURACIÓN DE COLUMNAS (Evita que queden aplastadas o feas)
-    col_config = {
-        "Nombre": st.column_config.TextColumn(
-            "Nombre del Buque",
-            help="Nombre identificador del navío extranjero",
-            width="large",
-            required=True
-        ),
-        "Bandera": st.column_config.TextColumn(
-            "Bandera",
-            help="País de bandera registrada",
-            width="medium"
-        ),
-        "Tipo": st.column_config.TextColumn(
-            "Tipo de Pesca",
-            help="Clasificación del arte de pesca autorizado",
-            width="medium"
-        ),
-        "MMSI": st.column_config.TextColumn(
-            "MMSI",
-            help="Maritime Mobile Service Identity",
-            width="medium"
-        ),
-        "IMO": st.column_config.TextColumn(
-            "IMO",
-            help="Número de la Organización Marítima Internacional",
-            width="medium"
-        ),
-        "Riesgo": st.column_config.TextColumn(
-            "Nivel Riesgo",
-            help="Evaluación del riesgo estratégico táctico",
-            width="small"
-        )
-    }
+    st.markdown(f"<p style='color: #3B82F6; font-size: 0.9rem; font-weight: 600; margin-bottom: 20px;'>{len(b_filtrados)} Buques Activos Identificados</p>", unsafe_allow_html=True)
 
-    evento = st.dataframe(
-        b_filtrados[cols_mostrar],
-        use_container_width=True, 
-        hide_index=True, 
-        height=520,
-        on_select="rerun", 
-        selection_mode="single-row",
-        column_config=col_config  # <-- ¡Aquí se aplica la magia de estructuración visual!
-    )
-    
-    if evento and len(evento.selection.rows) > 0:
-        indice = evento.selection.rows[0]
-        abrir_modal_buque(b_filtrados.iloc[indice])
+    # Renderizado en cuadrícula responsive de Tarjetas Premium (3 por fila)
+    num_columnas = 3
+    rows = [b_filtrados.iloc[i:i + num_columnas] for i in range(0, len(b_filtrados), num_columnas)]
+
+    for row_df in rows:
+        cols_grid = st.columns(num_columnas)
+        for i, (_, b) in enumerate(row_df.iterrows()):
+            with cols_grid[i]:
+                # Estilo de Alerta Visual en la tarjeta
+                es_interes = str(b.get('Buque de interes', '')).upper() == "SI"
+                borde_tarjeta = "#EF4444" if es_interes else "#21262D"
+                badge_html = '<span style="background-color: rgba(239, 68, 68, 0.2); color: #F87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;">INTERÉS</span>' if es_interes else '<span style="background-color: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.3); padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px;">STANDARD</span>'
+                
+                # HTML de la Tarjeta Táctica
+                st.markdown(f"""
+                <div style="background-color: #121620; border: 1px solid {borde_tarjeta}; border-radius: 12px; padding: 1.2rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4); min-height: 200px; display: flex; flex-col; justify-content: space-between;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h4 style="color: #60A5FA; margin: 0; font-size: 1.15rem; font-weight: 700; font-family: monospace;">🚢 {b.get('Nombre', '-')}</h4>
+                            {badge_html}
+                        </div>
+                        <div style="font-size: 0.85rem; color: #8E9CAE; line-height: 1.5; margin-bottom: 10px;">
+                            <strong>Bandera:</strong> <span style="color: white;">{b.get('Bandera', '-')}</span><br>
+                            <strong>Tipo de Pesca:</strong> <span style="color: white;">{b.get('Tipo', '-')}</span><br>
+                            <strong>Riesgo:</strong> <span style="color: white;">{b.get('Riesgo', '-')}</span>
+                        </div>
+                        <div style="border-top: 1px solid #21262D; padding-top: 8px; font-size: 0.78rem; font-family: monospace; color: #64748B;">
+                            MMSI: {b.get('MMSI', '-')} &nbsp;|&nbsp; IMO: {b.get('IMO', '-')}
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Botón de apertura de ficha técnica completa (vinculado al modal)
+                if st.button(f"🔎 Ficha Táctica - {b.get('Nombre')}", key=f"btn_{b.get('MMSI')}", use_container_width=True):
+                    abrir_modal_buque(b)
 
 
 # ==========================================
-# MÓDULO 3: AGENTE IA (CHATBOT MODERNO E INTERACTIVO)
+# MÓDULO 3: AGENTE IA (CHATBOT OPERATIVO CON ESCRITURA Y ACCESO TOTAL)
 # ==========================================
 elif menu == "Analista IA":
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = [
-            {"role": "assistant", "content": "Saludos, Operador. He analizado la base táctica de buques extranjeros. Estoy a su disposición para cruzar datos, generar reportes de inteligencia y armar gráficos interactivos. Pruebe pidiéndome: *'Grafica la flota de pesqueros por bandera'* o *'Dame una tabla de los buques de interés'*."}
+            {"role": "assistant", "content": "Saludos, Operador Marcelo. Estoy conectado de forma total a la base de datos central en tiempo real. He memorizado todos los campos (año de construcción, eslora, arqueo, IMO, señal, propietario, etc.).<br><br>Pruebe pidiéndome análisis complejos sobre años de construcción u ordenando comandos como: *'Pon en riesgo Alto el buque RIO SOLIS III'* o *'Marca el buque OU YA 18 como Buque de Interés'*."}
         ]
 
     # Encabezado del Chat Premium
@@ -459,37 +442,55 @@ elif menu == "Analista IA":
     <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 1px solid #21262D;">
         <div style="background-color: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; font-size: 22px; box-shadow: 0 0 10px rgba(16, 185, 129, 0.1);">🤖</div>
         <div>
-            <h2 style="color: #F8FAFC; margin: 0; font-size: 1.4rem; font-weight: 700;">Agente Analista RBPE</h2>
+            <h2 style="color: #F8FAFC; margin: 0; font-size: 1.4rem; font-weight: 700;">Agente Analista Tactico RBPE</h2>
             <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
                 <span style="background-color: #10B981; width: 6px; height: 6px; border-radius: 50%; display: inline-block;"></span>
-                <span style="color: #10B981; font-size: 0.75rem; font-weight: 600;">Servicio de IA Activo</span>
+                <span style="color: #10B981; font-size: 0.75rem; font-weight: 600;">Modo Simulación de Escritura Activo</span>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Contexto reducido
-    cols_clave = [c for c in ["Nombre", "MMSI", "Bandera", "Tipo", "Riesgo", "Buque de interes"] if c in buques.columns]
-    datos_ia = buques[cols_clave].to_csv(index=False)
+    # Serialización de TODOS los datos (sin recortar columnas) para que Gemini tenga conocimiento total
+    datos_ia_completos = buques.to_csv(index=False)
     
-    # Función inteligente para analizar el output de la IA y pintar gráficos/tablas interactivas descargables
+    # Función inteligente para analizar el output de la IA, pintar gráficos/tablas y procesar operaciones de bases de datos
     def renderizar_respuesta_inteligente(texto_crudo, df_base):
-        # Separar bloques de código de Python para gráficos Plotly
+        # 1. PARSEAR ACCIONES DE ESCRITURA (Para Supabase futuro)
+        # Formato de comando táctico: [DB_ACTION: UPDATE KEY="MMSI_VAL" FIELD="Field" VALUE="NewVal"]
+        patron_accion = r"\[DB_ACTION:\s*UPDATE\s*KEY=\"(.*?)\"\s*FIELD=\"(.*?)\"\s*VALUE=\"(.*?)\"\]"
+        acciones = re.findall(patron_accion, texto_crudo)
+        
+        for mmsi, campo, nuevo_valor in acciones:
+            # Buscar el buque por MMSI y modificarlo en el session_state
+            if mmsi in st.session_state.buques_df['MMSI'].astype(str).values:
+                # Modificación real en memoria local
+                st.session_state.buques_df.loc[st.session_state.buques_df['MMSI'].astype(str) == mmsi, campo] = nuevo_valor
+                st.toast(f"💾 [Supabase Sim] Registro actualizado: Buque MMSI {mmsi} -> {campo} set a '{nuevo_valor}'")
+                
+                # Renderizar un cartel indicador de éxito
+                st.markdown(f"""
+                <div style="background-color: rgba(16,185,129,0.12); border: 1px solid #10B981; border-radius: 8px; padding: 12px; margin: 10px 0;">
+                    <span style="color:#34D399; font-weight:bold;">Sincronización Simulación Supabase:</span> Cambiado exitosamente el campo <strong>{campo}</strong> a <strong>'{nuevo_valor}'</strong> para el buque seleccionado.
+                </div>
+                """, unsafe_allow_html=True)
+        
+        # Limpiar las etiquetas tácticas del texto para no mostrarlas crudas en el chat
+        texto_limpio = re.sub(r"\[DB_ACTION:.*?\]", "", texto_crudo)
+
+        # 2. PARSEAR GRÁFICOS Y TABLAS (Navegación Táctica)
         patron_python = r"```python\s*(.*?)\s*```"
-        # Separar bloques de código CSV para tablas st.dataframe descargables
         patron_csv = r"```csv\s*(.*?)\s*```"
         
-        partes_python = re.split(patron_python, texto_crudo, flags=re.DOTALL)
+        partes_python = re.split(patron_python, texto_limpio, flags=re.DOTALL)
         
         for idx, parte in enumerate(partes_python):
             if idx % 2 == 1:  # Es un bloque de código Python para graficar
                 try:
-                    # Entorno de ejecución seguro con las librerías necesarias
                     variables_locales = {"df": df_base, "px": px, "go": go, "pd": pd}
                     exec(parte, {}, variables_locales)
                     fig = variables_locales.get("fig")
                     if fig is not None:
-                        # Estilizar el gráfico dinámico para que combine con el dashboard oscurecido
                         fig.update_layout(
                             template='plotly_dark',
                             paper_bgcolor='rgba(18, 22, 32, 0.45)',
@@ -498,77 +499,72 @@ elif menu == "Analista IA":
                             font=dict(color='#8E9CAE')
                         )
                         st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.warning("⚠️ El agente generó código, pero no devolvió la figura 'fig'.")
                 except Exception as e:
-                    st.error(f"Error al procesar el gráfico interactivo: {e}")
-                    with st.expander("Ver código de depuración"):
-                        st.code(parte, language="python")
+                    st.error(f"Error al estructurar gráfico: {e}")
             else:
-                # Procesar bloques de CSV para transformarlos en tablas de alta gama descargables
                 partes_csv = re.split(patron_csv, parte, flags=re.DOTALL)
                 for csv_idx, csv_parte in enumerate(partes_csv):
                     if csv_idx % 2 == 1:  # Es una tabla en CSV
                         try:
                             df_tabla = pd.read_csv(StringIO(csv_parte.strip()))
-                            # Renderizamos st.dataframe (Streamlit ofrece descarga y copiado nativo en la esquina superior derecha)
                             st.dataframe(df_tabla, use_container_width=True)
                         except Exception as e:
-                            st.error(f"Error al estructurar la tabla interactiva: {e}")
-                            st.code(csv_parte, language="csv")
+                            st.error(f"Error al estructurar tabla: {e}")
                     else:
-                        # Es texto Markdown común
                         if csv_parte.strip():
                             st.markdown(csv_parte)
 
-    # Renderizar el historial de conversación en el Chat container
+    # Renderizar el historial de conversación en el Chat
     chat_container = st.container()
     with chat_container:
         for mensaje in st.session_state.chat_history:
             with st.chat_message(mensaje["role"]):
-                renderizar_respuesta_inteligente(mensaje["content"], buques)
+                renderizar_respuesta_inteligente(mensaje["content"], st.session_state.buques_df)
 
-    # Entrada de mensajes nativa
-    if prompt := st.chat_input("Escriba su consulta analítica..."):
+    # Entrada de comandos nativos de chat
+    if prompt := st.chat_input("Escriba su comando analítico o de edición aquí..."):
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            with st.spinner("Procesando datos y estructurando respuesta..."):
+            with st.spinner("Conectando con base táctica y Gemini..."):
                 try:
-                    # Instrucciones estrictas para que Gemini use el parser inteligente de frontend
                     contexto_oculto = f"""
-                    Eres un analista naval e ingeniero de datos tácticos para el Portal RBPE.
-                    Responde al operador utilizando estrictamente estos datos de buques en formato CSV:
+                    Eres un analista naval de nivel corporativo para la plataforma táctica militar RBPE.
+                    Tienes ACCESO COMPLETO a todos los datos del sistema, incluyendo dimensiones físicas (eslora, arqueo bruto), año de construcción, IMO, propietarios, nivel de riesgo y marcas de alertas.
                     
-                    {datos_ia}
+                    AQUÍ TIENES LA BASE DE DATOS EN CSV:
                     
-                    REGLAS CRÍTICAS DE SALIDA:
-                    1. Si el usuario te pide un gráfico (ej. "gráfica", "haz un gráfico", "comparativa visual", "gráfico de barras", etc.), DEBES incluir en tu respuesta un bloque de código python estructurado EXACTAMENTE de la siguiente manera:
-                       ```python
-                       # Genera un objeto de Plotly llamado 'fig' utilizando exclusivamente el DataFrame 'df' provisto
-                       # df contiene columnas: Nombre, MMSI, Bandera, Tipo, Riesgo, Buque de interes
-                       conteo = df['Bandera'].value_counts().reset_index().head(10)
-                       conteo.columns = ['Bandera', 'Cantidad']
-                       fig = px.bar(conteo, x='Bandera', y='Cantidad', color='Cantidad', color_continuous_scale='Blues')
-                       ```
-                       NO utilices st.plotly_chart ni muestres la figura. Define únicamente la variable 'fig'.
+                    {datos_ia_completos}
+                    
+                    INSTRUCCIONES CLAVE DE OPERACIÓN:
+                    1. Si el usuario te pide datos temporales, antigüedad o años de construcción, DEBES calcularlo dinámicamente usando la columna 'Fecha de construccion' de manera matemática e inteligente basándote en que el año actual es 2026.
+                    
+                    2. Si el usuario te ordena CAMBIAR, ACTUALIZAR o MODIFICAR el estado de un buque (ej: "Pon en riesgo Alto el buque RIO SOLIS III"), debes identificar su MMSI en la base de datos y adjuntar al FINAL de tu respuesta el siguiente comando estricto de actualización para que el frontend lo procese en la simulación:
+                       [DB_ACTION: UPDATE KEY="mmsi_del_buque" FIELD="nombre_campo_normalizado" VALUE="nuevo_valor"]
                        
-                    2. Si el usuario te pide una lista estructurada, resumen de registros, o tabla de datos, DEBES presentar los datos estructurados dentro de un bloque CSV EXACTAMENTE de la siguiente manera:
-                       ```csv
-                       Nombre,Bandera,Tipo,MMSI
-                       101 HAERANG,Corea del Sur,POTERO,441879000
-                       FONG TAI NO. 21,Vanuatu,POTERO,577101000
-                       ```
-                       Esto permitirá que nuestro sistema lo convierta de forma transparente en una tabla interactiva que el operador podrá COPIAR, FILTRAR y DESCARGAR en formato CSV.
+                       Los nombres de los campos válidos para actualizar son: 'Riesgo', 'Buque de interes'
+                       Por ejemplo, si te pide poner RIO SOLIS III en Alerta:
+                       [DB_ACTION: UPDATE KEY="770576346" FIELD="Buque de interes" VALUE="SI"]
+                       
+                    3. Si el usuario te pide perfiles de barco específicos (ej: "dame el perfil de RIO SOLIS III"), diseña un perfil detallado utilizando un estilo markdown limpio que incluya dimensiones, identificación, antigüedad y riesgo, estructurado de forma atractiva.
 
-                    3. Mantén un tono formal, técnico y conciso. Evita introducciones innecesarias si la consulta es directa.
+                    4. Para gráficos interactivos dinámicos, genera el bloque python:
+                       ```python
+                       # código usando df y guardando en fig
+                       ```
+                       
+                    5. Para tablas estructuradas de consulta, usa bloques ```csv ```.
                     
                     Pregunta del Operador: {prompt}
                     """
                     respuesta = modelo_ia.generate_content(contexto_oculto)
-                    renderizar_respuesta_inteligente(respuesta.text, buques)
+                    renderizar_respuesta_inteligente(respuesta.text, st.session_state.buques_df)
                     st.session_state.chat_history.append({"role": "assistant", "content": respuesta.text})
+                    
+                    # Refrescar dinámicamente si se modificaron datos para actualizar el Dashboard y Fichas tácticas de inmediato
+                    if "[DB_ACTION:" in respuesta.text:
+                        st.rerun()
                 except Exception as e:
                     st.error(f"Error de comunicación con el nodo de IA: {e}")
