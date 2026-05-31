@@ -70,7 +70,7 @@ genai.configure(api_key=st.secrets["api"]["gemini_key"])
 modelo_ia = genai.GenerativeModel('gemini-3.1-flash-lite')
 
 # REEMPLAZA TU ID AQUÍ
-SHEET_ID = "1ef0-OayCrHg4VeNJVkkM8w6t4j0rmBhT91nVfbJFibw" 
+SHEET_ID = st.secrets["api"]["sheet_id"]
 
 @st.cache_data(ttl=60)
 def cargar_datos_sheets():
