@@ -2,7 +2,10 @@ import streamlit as st
 import pandas as pd
 import google.generativeai as genai
 import plotly.express as px
+import plotly.graph_objects as go
 from streamlit_option_menu import option_menu
+import re
+from io import StringIO
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Portal RBPE", page_icon="⚓", layout="wide", initial_sidebar_state="expanded")
@@ -72,6 +75,26 @@ st.markdown("""
         border-radius: 12px !important;
         padding: 18px !important;
         box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
+    }
+
+    /* Ajustes Chatbot nativo de Streamlit */
+    .stChatMessage {
+        background-color: rgba(18, 22, 32, 0.3) !important;
+        border: 1px solid #21262D !important;
+        border-radius: 12px !important;
+        margin-bottom: 12px !important;
+        padding: 1rem !important;
+    }
+    [data-testid="chatAvatarIcon-user"] {
+        background-color: #2563EB !important;
+    }
+    [data-testid="chatAvatarIcon-assistant"] {
+        background-color: #10B981 !important;
+    }
+    .stChatInputContainer {
+        border-color: #21262D !important;
+        border-radius: 12px !important;
+        background-color: #121620 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -423,12 +446,12 @@ elif menu == "Base de Datos":
 
 
 # ==========================================
-# MÓDULO 3: AGENTE IA (CHATBOT MODERNO)
+# MÓDULO 3: AGENTE IA (CHATBOT MODERNO E INTERACTIVO)
 # ==========================================
 elif menu == "Analista IA":
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = [
-            {"role": "assistant", "content": "Saludos, Operador. He analizado la base táctica de buques extranjeros. Estoy a su disposición para cruzar datos y generar informes tácticos. ¿Cuál es su consulta?"}
+            {"role": "assistant", "content": "Saludos, Operador. He analizado la base táctica de buques extranjeros. Estoy a su disposición para cruzar datos, generar reportes de inteligencia y armar gráficos interactivos. Pruebe pidiéndome: *'Grafica la flota de pesqueros por bandera'* o *'Dame una tabla de los buques de interés'*."}
         ]
 
     # Encabezado del Chat Premium
@@ -449,14 +472,63 @@ elif menu == "Analista IA":
     cols_clave = [c for c in ["Nombre", "MMSI", "Bandera", "Tipo", "Riesgo", "Buque de interes"] if c in buques.columns]
     datos_ia = buques[cols_clave].to_csv(index=False)
     
+    # Función inteligente para analizar el output de la IA y pintar gráficos/tablas interactivas descargables
+    def renderizar_respuesta_inteligente(texto_crudo, df_base):
+        # Separar bloques de código de Python para gráficos Plotly
+        patron_python = r"```python\s*(.*?)\s*```"
+        # Separar bloques de código CSV para tablas st.dataframe descargables
+        patron_csv = r"```csv\s*(.*?)\s*```"
+        
+        partes_python = re.split(patron_python, texto_crudo, flags=re.DOTALL)
+        
+        for idx, parte in enumerate(partes_python):
+            if idx % 2 == 1:  # Es un bloque de código Python para graficar
+                try:
+                    # Entorno de ejecución seguro con las librerías necesarias
+                    variables_locales = {"df": df_base, "px": px, "go": go, "pd": pd}
+                    exec(parte, {}, variables_locales)
+                    fig = variables_locales.get("fig")
+                    if fig is not None:
+                        # Estilizar el gráfico dinámico para que combine con el dashboard oscurecido
+                        fig.update_layout(
+                            template='plotly_dark',
+                            paper_bgcolor='rgba(18, 22, 32, 0.45)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            margin=dict(t=30, l=15, r=15, b=20),
+                            font=dict(color='#8E9CAE')
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.warning("⚠️ El agente generó código, pero no devolvió la figura 'fig'.")
+                except Exception as e:
+                    st.error(f"Error al procesar el gráfico interactivo: {e}")
+                    with st.expander("Ver código de depuración"):
+                        st.code(parte, language="python")
+            else:
+                # Procesar bloques de CSV para transformarlos en tablas de alta gama descargables
+                partes_csv = re.split(patron_csv, parte, flags=re.DOTALL)
+                for csv_idx, csv_parte in enumerate(partes_csv):
+                    if csv_idx % 2 == 1:  # Es una tabla en CSV
+                        try:
+                            df_tabla = pd.read_csv(StringIO(csv_parte.strip()))
+                            # Renderizamos st.dataframe (Streamlit ofrece descarga y copiado nativo en la esquina superior derecha)
+                            st.dataframe(df_tabla, use_container_width=True)
+                        except Exception as e:
+                            st.error(f"Error al estructurar la tabla interactiva: {e}")
+                            st.code(csv_parte, language="csv")
+                    else:
+                        # Es texto Markdown común
+                        if csv_parte.strip():
+                            st.markdown(csv_parte)
+
+    # Renderizar el historial de conversación en el Chat container
     chat_container = st.container()
-    
     with chat_container:
         for mensaje in st.session_state.chat_history:
             with st.chat_message(mensaje["role"]):
-                st.markdown(mensaje["content"])
+                renderizar_respuesta_inteligente(mensaje["content"], buques)
 
-    # Chat Input nativo moderno
+    # Entrada de mensajes nativa
     if prompt := st.chat_input("Escriba su consulta analítica..."):
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -465,18 +537,38 @@ elif menu == "Analista IA":
         with st.chat_message("assistant"):
             with st.spinner("Procesando datos y estructurando respuesta..."):
                 try:
+                    # Instrucciones estrictas para que Gemini use el parser inteligente de frontend
                     contexto_oculto = f"""
-                    Eres un analista naval de nivel corporativo para la plataforma RBPE.
-                    Usa de forma estricta los siguientes datos en CSV para responder:
+                    Eres un analista naval e ingeniero de datos tácticos para el Portal RBPE.
+                    Responde al operador utilizando estrictamente estos datos de buques en formato CSV:
                     
                     {datos_ia}
                     
-                    Pregunta: {prompt}
+                    REGLAS CRÍTICAS DE SALIDA:
+                    1. Si el usuario te pide un gráfico (ej. "gráfica", "haz un gráfico", "comparativa visual", "gráfico de barras", etc.), DEBES incluir en tu respuesta un bloque de código python estructurado EXACTAMENTE de la siguiente manera:
+                       ```python
+                       # Genera un objeto de Plotly llamado 'fig' utilizando exclusivamente el DataFrame 'df' provisto
+                       # df contiene columnas: Nombre, MMSI, Bandera, Tipo, Riesgo, Buque de interes
+                       conteo = df['Bandera'].value_counts().reset_index().head(10)
+                       conteo.columns = ['Bandera', 'Cantidad']
+                       fig = px.bar(conteo, x='Bandera', y='Cantidad', color='Cantidad', color_continuous_scale='Blues')
+                       ```
+                       NO utilices st.plotly_chart ni muestres la figura. Define únicamente la variable 'fig'.
+                       
+                    2. Si el usuario te pide una lista estructurada, resumen de registros, o tabla de datos, DEBES presentar los datos estructurados dentro de un bloque CSV EXACTAMENTE de la siguiente manera:
+                       ```csv
+                       Nombre,Bandera,Tipo,MMSI
+                       101 HAERANG,Corea del Sur,POTERO,441879000
+                       FONG TAI NO. 21,Vanuatu,POTERO,577101000
+                       ```
+                       Esto permitirá que nuestro sistema lo convierta de forma transparente en una tabla interactiva que el operador podrá COPIAR, FILTRAR y DESCARGAR en formato CSV.
+
+                    3. Mantén un tono formal, técnico y conciso. Evita introducciones innecesarias si la consulta es directa.
                     
-                    Responde de forma concisa, objetiva y estructurada utilizando viñetas o tablas markdown si es oportuno.
+                    Pregunta del Operador: {prompt}
                     """
                     respuesta = modelo_ia.generate_content(contexto_oculto)
-                    st.markdown(respuesta.text)
+                    renderizar_respuesta_inteligente(respuesta.text, buques)
                     st.session_state.chat_history.append({"role": "assistant", "content": respuesta.text})
                 except Exception as e:
                     st.error(f"Error de comunicación con el nodo de IA: {e}")
