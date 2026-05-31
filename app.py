@@ -43,7 +43,7 @@ if not check_password():
 
 # 1. Configurar la IA de Gemini
 genai.configure(api_key=st.secrets["api"]["gemini_key"])
-modelo_ia = genai.GenerativeModel('gemini-pro')
+modelo_ia = genai.GenerativeModel('gemini-3.1-flash-lite')
 
 # 2. Conexión a Google Sheets (REEMPLAZA TU ID AQUÍ)
 SHEET_ID = "1ef0-OayCrHg4VeNJVkkM8w6t4j0rmBhT91nVfbJFibw" 
