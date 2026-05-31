@@ -57,10 +57,21 @@ st.markdown("""
     /* Tarjeta de login centrada con brillo de neón sutil */
     .login-container {
         background-color: #121620;
-        padding: 2.5rem;
+        padding: 3rem;
         border-radius: 16px;
-        border: 1px solid #1F2937;
-        box-shadow: 0 0 20px rgba(59, 130, 246, 0.15);
+        border: 1px solid #21262D;
+        box-shadow: 0 8px 32px rgba(59, 130, 246, 0.15);
+        text-align: center;
+        margin-top: 2rem;
+    }
+
+    /* Contenedores de gráficos idénticos, transparentes y alineados */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: rgba(18, 22, 32, 0.45) !important;
+        border: 1px solid #21262D !important;
+        border-radius: 12px !important;
+        padding: 18px !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -112,7 +123,7 @@ if not check_password():
 
 
 # ==========================================
-# IA Y CONEXIÓN DE DATOS
+# IA Y CONEXIÓN DE DATOS (CON PARSER ROBUSTO)
 # ==========================================
 try:
     genai.configure(api_key=st.secrets["api"]["gemini_key"])
@@ -122,11 +133,35 @@ except:
     st.error("Error: Faltan configurar credenciales en los secretos.")
     st.stop()
 
+# Función inteligente para evitar KeyError: 'Tipo' o similares en hojas externas
+def normalizar_columnas(df):
+    df.columns = df.columns.str.strip()
+    mapeo = {
+        'nombre': 'Nombre',
+        'bandera': 'Bandera',
+        'tipo': 'Tipo', 'tipo de pesca': 'Tipo', 'tipo_pesca': 'Tipo', 'arte de pesca': 'Tipo',
+        'mmsi': 'MMSI', 'mmsi_2': 'MMSI_2',
+        'imo': 'IMO',
+        'indicativo de llamada': 'Indicativo de llamada', 'senal': 'Indicativo de llamada', 'señal': 'Indicativo de llamada',
+        'eslora': 'Eslora',
+        'arqueo bruto': 'Arqueo bruto', 'arqueo': 'Arqueo bruto',
+        'riesgo': 'Riesgo',
+        'buque de interes': 'Buque de interes', 'buque de interés': 'Buque de interes', 'interes': 'Buque de interes'
+    }
+    nuevos_nombres = {}
+    for col in df.columns:
+        col_min = col.lower()
+        if col_min in mapeo:
+            nuevos_nombres[col] = mapeo[col_min]
+    df = df.rename(columns=nuevos_nombres)
+    return df
+
 @st.cache_data(ttl=600)
 def cargar_datos():
     url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv"
     df = pd.read_csv(url)
     df = df.fillna("-") 
+    df = normalizar_columnas(df) # Normalizamos de forma proactiva
     return df
 
 with st.spinner('Actualizando base de datos táctica...'):
@@ -182,7 +217,7 @@ def abrir_modal_buque(b):
 
 
 # ==========================================
-# BARRA LATERAL (SIDEBAR REDISEÑADO)
+# BARRA LATERAL (SIDEBAR REDISEÑADO CON UX PREMIUM)
 # ==========================================
 with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
@@ -194,8 +229,8 @@ with st.sidebar:
         """, unsafe_allow_html=True)
     with col_title:
         st.markdown("""
-        <h3 style="margin:0; color:white; line-height:1.2; font-weight: 700; font-size: 1.4rem;">Portal <span style="color:#3B82F6;">RBPE</span></h3>
-        <span style="color: #8E9CAE; font-size: 0.75rem; letter-spacing: 0.5px;">CONTROL MARÍTIMO</span>
+        <h3 style="margin:0; color:white; line-height:1.2; font-weight: 700; font-size: 1.3rem;">Portal <span style="color:#3B82F6;">RBPE</span></h3>
+        <span style="color: #8E9CAE; font-size: 0.72rem; letter-spacing: 0.5px;">CONTROL MARÍTIMO</span>
         """, unsafe_allow_html=True)
         
     st.markdown("<br>", unsafe_allow_html=True)
@@ -223,12 +258,14 @@ with st.sidebar:
         styles={
             "container": {"padding": "0!important", "background-color": "transparent"},
             "icon": {"color": "#60A5FA", "font-size": "18px"}, 
-            "nav-link": {"color": "#8E9CAE", "font-size": "14px", "text-align": "left", "margin": "4px 0", "border-radius": "8px", "padding": "10px 15px"},
+            "nav-link": {"color": "#8E9CAE", "font-size": "14px", "text-align": "left", "margin": "8px 0", "border-radius": "8px", "padding": "10px 15px"},
             "nav-link-selected": {"background-color": "#2563EB", "color": "white", "font-weight": "700"},
         }
     )
     
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    # Espaciado dinámico UX para empujar el botón de cierre a la zona inferior de forma fluida
+    st.markdown("<div style='height: 18vh;'></div>", unsafe_allow_html=True)
+    
     if st.button("🚪 Cerrar Sesión", use_container_width=True):
         st.session_state.clear()
         st.rerun()
@@ -263,54 +300,57 @@ if menu == "Panel de Control":
     col_graf1, col_graf2 = st.columns([1, 1])
     
     with col_graf1:
-        st.markdown("<h4 style='color: #E2E8F0; margin-bottom: 15px; font-weight: 600;'>Flota Pesquera por Bandera</h4>", unsafe_allow_html=True)
-        if not pesqueros_filtrados.empty:
-            conteo_banderas = pesqueros_filtrados["Bandera"].value_counts().reset_index()
-            conteo_banderas.columns = ["Bandera", "Cantidad"]
-            
-            fig_bar = px.bar(
-                conteo_banderas, x='Bandera', y='Cantidad', 
-                color='Cantidad', color_continuous_scale='Blues', text_auto=True
-            )
-            fig_bar.update_layout(
-                template='plotly_dark',
-                paper_bgcolor='rgba(18, 22, 32, 0.4)',  # Glassmorphic semi-transparente
-                plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(t=15, l=15, r=15, b=20),
-                height=380,
-                coloraxis_showscale=False,
-                xaxis_title="",
-                yaxis_title="Cantidad",
-                font=dict(color='#8E9CAE')
-            )
-            fig_bar.update_traces(marker_line_color='#21262D', marker_line_width=1, textposition="outside", cliponaxis=False)
-            st.plotly_chart(fig_bar, use_container_width=True)
-        else:
-            st.info("Sin datos para procesar.")
+        # Contenedor con borde nativo estilizado por CSS a semi-transparente
+        with st.container(border=True):
+            st.markdown("<h4 style='color: #E2E8F0; margin: 0 0 10px 0; font-weight: 600; font-size: 1.1rem; border-bottom: 1px solid #21262D; padding-bottom: 8px;'>Flota Pesquera por Bandera</h4>", unsafe_allow_html=True)
+            if not pesqueros_filtrados.empty:
+                conteo_banderas = pesqueros_filtrados["Bandera"].value_counts().reset_index()
+                conteo_banderas.columns = ["Bandera", "Cantidad"]
+                
+                fig_bar = px.bar(
+                    conteo_banderas, x='Bandera', y='Cantidad', 
+                    color='Cantidad', color_continuous_scale='Blues', text_auto=True
+                )
+                fig_bar.update_layout(
+                    template='plotly_dark',
+                    paper_bgcolor='rgba(0,0,0,0)', # Transparente para respetar el Glassmorphic
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(t=15, l=15, r=15, b=20),
+                    height=330,
+                    coloraxis_showscale=False,
+                    xaxis_title="",
+                    yaxis_title="Cantidad",
+                    font=dict(color='#8E9CAE')
+                )
+                fig_bar.update_traces(marker_line_color='#21262D', marker_line_width=1, textposition="outside", cliponaxis=False)
+                st.plotly_chart(fig_bar, use_container_width=True)
+            else:
+                st.info("Sin datos para procesar.")
 
     with col_graf2:
-        st.markdown("<h4 style='color: #E2E8F0; margin-bottom: 15px; font-weight: 600;'>Distribución por Tipo de Pesquero</h4>", unsafe_allow_html=True)
-        if not pesqueros_filtrados.empty:
-            conteo_tipos = pesqueros_filtrados["Tipo"].value_counts().reset_index()
-            conteo_tipos.columns = ["Tipo", "Cantidad"]
-            
-            fig_pie = px.pie(
-                conteo_tipos, values='Cantidad', names='Tipo', hole=0.6,
-                color_discrete_sequence=px.colors.sequential.Cyan_r
-            )
-            fig_pie.update_layout(
-                template='plotly_dark',
-                paper_bgcolor='rgba(18, 22, 32, 0.4)',  # Glassmorphic semi-transparente
-                plot_bgcolor='rgba(0,0,0,0)',
-                margin=dict(t=15, l=15, r=15, b=15),
-                height=380,
-                font=dict(color='#8E9CAE'),
-                legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5)
-            )
-            fig_pie.update_traces(marker=dict(line=dict(color='#21262D', width=1.5)))
-            st.plotly_chart(fig_pie, use_container_width=True)
-        else:
-            st.info("Sin datos para procesar.")
+        with st.container(border=True):
+            st.markdown("<h4 style='color: #E2E8F0; margin: 0 0 10px 0; font-weight: 600; font-size: 1.1rem; border-bottom: 1px solid #21262D; padding-bottom: 8px;'>Distribución por Tipo de Pesquero</h4>", unsafe_allow_html=True)
+            if not pesqueros_filtrados.empty:
+                conteo_tipos = pesqueros_filtrados["Tipo"].value_counts().reset_index()
+                conteo_tipos.columns = ["Tipo", "Cantidad"]
+                
+                fig_pie = px.pie(
+                    conteo_tipos, values='Cantidad', names='Tipo', hole=0.6,
+                    color_discrete_sequence=px.colors.sequential.Cyan_r
+                )
+                fig_pie.update_layout(
+                    template='plotly_dark',
+                    paper_bgcolor='rgba(0,0,0,0)', # Transparente para respetar el Glassmorphic
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    margin=dict(t=15, l=15, r=15, b=15),
+                    height=330,
+                    font=dict(color='#8E9CAE'),
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5)
+                )
+                fig_pie.update_traces(marker=dict(line=dict(color='#21262D', width=1.5)))
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info("Sin datos para procesar.")
 
 
 # ==========================================
@@ -319,8 +359,8 @@ if menu == "Panel de Control":
 elif menu == "Base de Datos":
     st.markdown("<h2 style='color: #F8FAFC; margin-bottom: 20px; font-weight: 700;'>Directorio General de Buques</h2>", unsafe_allow_html=True)
     
-    # Campo de búsqueda directa y limpia de ancho completo
-    busqueda = st.text_input("🔍 Buscador Táctico", placeholder="Escriba un Nombre, MMSI, IMO, Bandera o Tipo de pesquero...", label_visibility="collapsed")
+    # Campo de búsqueda directa y limpia de ancho completo (Sin contenedor innecesario de lupa)
+    busqueda = st.text_input("🔍 Buscar Buque", placeholder="Escriba un Nombre, MMSI, IMO, Bandera o Tipo de pesquero...", label_visibility="collapsed")
     
     b_filtrados = buques.copy()
     if busqueda:
