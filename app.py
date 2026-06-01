@@ -6,7 +6,7 @@ import plotly.express as px
 import json
 
 # --- 1. CONFIGURACIÓN Y ESTÉTICA PREMIUM MÁSTER ---
-st.set_page_config(page_title="Charly - Comando Táctico", page_icon="⚓", layout="wide")
+st.set_page_config(page_title="Charly - Agente PAPE", page_icon="⚓", layout="wide")
 
 st.markdown("""
 <style>
@@ -39,7 +39,7 @@ if not st.session_state["password_correct"]:
         st.markdown("<br><br><h2 style='text-align:center; color: #F8FAFC; font-weight: 800; letter-spacing: 1px;'>⚓ COMANDO RBPE</h2>", unsafe_allow_html=True)
         user_input = st.text_input("Identificación de Operador")
         pass_input = st.text_input("Código de Acceso", type="password")
-        if st.button("INICIAR SESIÓN TÁCTICA", use_container_width=True):
+        if st.button("INICIAR SESIÓN", use_container_width=True):
             if user_input in st.secrets["passwords"] and pass_input == st.secrets["passwords"][user_input]:
                 st.session_state["password_correct"] = True
                 st.session_state["user"] = user_input.capitalize()
@@ -151,7 +151,7 @@ def generar_grafico_distribucion(variable_analisis: str) -> dict:
             df_df.columns = ['Nivel de Riesgo', 'Cantidad']
             st.session_state.mensajes_ui.append({
                 "role": "assistant", 
-                "content": "📊 **Análisis Táctico:** Distribución geométrica de los Niveles de Riesgo en la Flota.",
+                "content": "📊 **Análisis:** Distribución geométrica de los Niveles de Riesgo en la Flota.",
                 "visualizacion": {"tipo": "grafico_torta", "datos": df_df.to_dict(orient="records"), "x": "Nivel de Riesgo", "y": "Cantidad", "titulo": "Distribución General de Riesgos"}
             })
         elif variable_analisis == "bandera":
@@ -163,7 +163,7 @@ def generar_grafico_distribucion(variable_analisis: str) -> dict:
             
             st.session_state.mensajes_ui.append({
                 "role": "assistant", 
-                "content": "📊 **Análisis Táctico:** Concentración de Volumen de Buques por Bandera Operativa.",
+                "content": "📊 **Análisis:** Concentración de Volumen de Buques por Bandera Operativa.",
                 "visualizacion": {"tipo": "grafico_barras", "datos": df_df.to_dict(orient="records"), "x": "Bandera", "y": "Cantidad de Buques", "titulo": "Carga de Flota por Pabellón Nacional"}
             })
             
@@ -192,7 +192,7 @@ if "chat" not in st.session_state:
     st.session_state.chat = model.start_chat(enable_automatic_function_calling=True)
 
 if "mensajes_ui" not in st.session_state:
-    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Comando Táctico Integrado en línea.** Operador **{operador}**, sistemas de análisis local y renderizado inmediato estabilizados. ¿Cuáles son sus directivas?"}]
+    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Comando Integrado en línea.** Operador **{operador}**, sistemas de análisis local y renderizado inmediato estabilizados. ¿Cuáles son sus directivas?"}]
 
 # --- 6. INTERFAZ DE CHAT Y DESPLIEGUE RECOBRADO (FRONTEND) ---
 st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Analista Naval <span style='color: #3B82F6;'>Charly</span></h1>", unsafe_allow_html=True)
