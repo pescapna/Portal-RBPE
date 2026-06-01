@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 import json
 
-# --- 1. CONFIGURACIÓN Y ESTÉTICA PREMIUM ---
+# --- 1. CONFIGURACIÓN Y ESTÉTICA PREMIUM MÁSTER ---
 st.set_page_config(page_title="Charly v2 - Centro de Análisis ReAct", page_icon="⚓", layout="wide")
 
 st.markdown("""
@@ -162,6 +162,7 @@ model = genai.GenerativeModel(
     3. ACTUAR: Invoca la herramienta `ejecutar_sql`.
     4. OBSERVACIÓN DINÁMICA: Lee la respuesta de la herramienta. 
        - Si el resultado de la consulta fue masivo (>=15 filas), la herramienta interceptará los datos, los pintará en la pantalla del usuario automáticamente y te devolverá un resumen con el conteo de filas y una pequeña muestra. Utiliza esa información resumida para elaborar tu conclusión.
+       - Si el usuario te adjunta un archivo (imagen, PDF o CSV), este llegará directo a tus capacidades multimedia de visión/lectura. Úsalo para contrastarlo o cruzarlo con el SQL que ejecutes.
     5. RESPUESTA FINAL: Redacta tu informe final de forma directa, concisa, profesional y corporativa. Confirma los hallazgos numéricos exactos apoyándote en lo observado.
     
     DIRECTRICES ESTRICTAS:
@@ -174,11 +175,22 @@ if "chat" not in st.session_state:
     st.session_state.chat = model.start_chat(enable_automatic_function_calling=True)
 
 if "mensajes_ui" not in st.session_state:
-    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Centro de Análisis ReAct v2 Estabilizado.** Operador **{operador}**, pasarela SQL protegida contra saturación de cuota. Introduzca su requerimiento."}]
+    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Centro de Análisis ReAct v2 Multimodal Estabilizado.** Operador **{operador}**, soporte para imágenes, PDFs y CSVs en línea con pasarela SQL protegida. Introduzca su requerimiento."}]
 
 # --- 7. INTERFAZ DE CHAT Y DESPLIEGUE VISUAL REACTIVO ---
 st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Analista ReAct <span style='color: #3B82F6;'>Charly v2</span></h1>", unsafe_allow_html=True)
 
+# 📁 CARGADOR MULTIMEDIA INTEGRADO EN LA BARRA LATERAL
+with st.sidebar:
+    st.markdown("### 📎 Adjuntar Documentación")
+    archivo_adjunto = st.file_uploader(
+        "Sube una imagen, PDF o CSV para que Charly lo analice junto con tu consulta", 
+        type=["png", "jpg", "jpeg", "pdf", "csv"]
+    )
+    if archivo_adjunto:
+        st.success(f"Archivo cargado: {archivo_adjunto.name}")
+
+# Pintar el historial reactivamente
 for msg in st.session_state.mensajes_ui:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
@@ -197,16 +209,36 @@ for msg in st.session_state.mensajes_ui:
                 fig = px.pie(df_visual, names=v["x"], values=v["y"], title=v["titulo"], template="plotly_dark")
                 st.plotly_chart(fig, use_container_width=True)
 
+# Captura de prompts e inyección mixta de archivos
 if prompt := st.chat_input("Ordene cualquier consulta analítica o auditoría cruzada..."):
     st.session_state["necesita_rerun"] = False
-    st.session_state.mensajes_ui.append({"role": "user", "content": prompt})
+    
+    # Si hay un adjunto en la sidebar, modificamos la cadena visible para avisar al operador
+    texto_mostrar = prompt
+    if archivo_adjunto:
+        texto_mostrar = f"📎 *[Archivo adjunto: {archivo_adjunto.name}]*\n\n{prompt}"
+        
+    st.session_state.mensajes_ui.append({"role": "user", "content": texto_mostrar})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(texto_mostrar)
 
     with st.chat_message("assistant"):
         with st.spinner("Ejecutando ciclo ReAct (Razonamiento, Acción y Observación)..."):
             try:
-                respuesta = st.session_state.chat.send_message(prompt)
+                # Iniciar el contenedor mixto de mensaje hacia el SDK de Gemini
+                contenido_mensaje = [prompt]
+                
+                if archivo_adjunto:
+                    # Extraer el flujo de bytes binarios del buffer cargado
+                    bytes_archivo = archivo_adjunto.getvalue()
+                    estructura_multimedia = {
+                        "mime_type": archivo_adjunto.type,
+                        "data": bytes_archivo
+                    }
+                    contenido_mensaje.append(estructura_multimedia)
+                
+                # Envío continuo de la estructura de contenido mixto
+                respuesta = st.session_state.chat.send_message(contenido_mensaje)
                 st.markdown(respuesta.text)
                 st.session_state.mensajes_ui.append({"role": "assistant", "content": respuesta.text})
                 
