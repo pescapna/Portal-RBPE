@@ -8,7 +8,7 @@ from io import StringIO
 from supabase import create_client, Client
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Charly - Inteligencia Naval", page_icon="⚓", layout="centered")
+st.set_page_config(page_title="Charly - Analista Naval", page_icon="⚓", layout="centered")
 
 # --- ESTILO DARK PREMIUM ---
 st.markdown("""
@@ -16,7 +16,7 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #0B0E14; color: #E2E8F0; }
     .stApp { background-color: #0B0E14; }
-    .stChatMessage { background-color: #161B22 !important; border: 1px solid #30363D !important; border-radius: 15px !important; padding: 1.5rem !important; }
+    .stChatMessage { background-color: #161B22 !important; border: 1px solid #30363D !important; border-radius: 15px !important; }
     .charly-vessel-card {
         background: linear-gradient(145deg, #1e293b, #0f172a);
         border-left: 5px solid #3b82f6; border-radius: 12px; padding: 20px; margin: 15px 0;
@@ -36,7 +36,7 @@ if "password_correct" not in st.session_state:
 if not st.session_state["password_correct"]:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("<h2 style='text-align:center;'>⚓ Acceso RBPE</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align:center;'>⚓ Acceso Táctico</h2>", unsafe_allow_html=True)
         user = st.text_input("Usuario")
         pw = st.text_input("Contraseña", type="password")
         if st.button("Entrar"):
@@ -53,12 +53,13 @@ try:
     KEY = st.secrets["supabase"]["service_role_key"]
     supabase: Client = create_client(URL, KEY)
     genai.configure(api_key=st.secrets["api"]["gemini_key"])
+    # MODELO ESTABLE
     modelo_ia = genai.GenerativeModel('gemini-3.1-flash-lite')
 except Exception as e:
     st.error(f"Error de sistema: {e}")
     st.stop()
 
-# --- LOGICA DE DATOS ---
+# --- CARGA DE DATOS ---
 @st.cache_data(ttl=60)
 def fetch_data():
     res = supabase.table("buques_identidad").select(
@@ -85,13 +86,13 @@ def render_vessel(b):
             <div class="stat-item"><span class="stat-label">ID</span><br><span class="stat-value">{b['id_buque']}</span></div>
             <div class="stat-item"><span class="stat-label">Bandera</span><br><span class="stat-value">{b['Bandera']}</span></div>
             <div class="stat-item"><span class="stat-label">MMSI</span><br><span class="stat-value">{b['MMSI']}</span></div>
-            <div class="stat-item"><span class="stat-label">Tipo</span><br><span class="stat-value">{b['Tipo']}</span></div>
+            <div class="stat-item"><span class="stat-label">IMO</span><br><span class="stat-value">{b['IMO']}</span></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
 def parser_charly(text, df):
-    # 1. Herramienta: Actualización DB
+    # 1. Comandos de Actualización
     upds = re.findall(r"\[UPDATE:\s*(.*?),\s*(.*?),\s*(.*?)\]", text)
     for uid, field, val in upds:
         col = field.strip().lower()
@@ -100,16 +101,16 @@ def parser_charly(text, df):
             st.toast(f"✅ Base de datos sincronizada: {uid}")
             st.cache_data.clear()
 
-    # 2. Herramienta: Fichas
+    # 2. Comandos de Fichas
     fichas = re.findall(r"\[FICHA:\s*(.*?)\]", text)
     for fid in fichas:
         v = df[df['id_buque'] == fid.strip()]
         if not v.empty: render_vessel(v.iloc[0])
 
-    # 3. Herramienta: Gráficos y Tablas
+    # 3. Gráficos y Tablas
     clean_text = re.sub(r"\[.*?\]", "", text)
     
-    # Buscamos bloques de CÓDIGO (Gráficos)
+    # Bloques de código (Gráficos)
     partes_codigo = re.split(r"```python\s*(.*?)\s*```", clean_text, flags=re.DOTALL)
     for i, p in enumerate(partes_codigo):
         if i % 2 == 1:
@@ -119,12 +120,11 @@ def parser_charly(text, df):
                 if "fig" in scope: st.plotly_chart(scope["fig"], use_container_width=True)
             except Exception as e: st.error(f"Error gráfico: {e}")
         else:
-            # Buscamos bloques de DATOS (Tablas)
+            # Bloques CSV (Tablas)
             partes_csv = re.split(r"```csv\s*(.*?)\s*```", p, flags=re.DOTALL)
             for j, p_csv in enumerate(partes_csv):
                 if j % 2 == 1:
-                    try:
-                        st.dataframe(pd.read_csv(StringIO(p_csv.strip())), use_container_width=True)
+                    try: st.dataframe(pd.read_csv(StringIO(p_csv.strip())), use_container_width=True)
                     except: st.error("Error al procesar tabla")
                 else:
                     if p_csv.strip(): st.markdown(p_csv)
@@ -134,7 +134,7 @@ user_name = st.session_state.get("usuario_actual", "Operador")
 st.title(f"⚓ Analista Charly")
 
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": f"Hola {user_name}, soy Charly. Mi núcleo operativo está conectado a Supabase. ¿Qué buque o análisis estadístico deseas ejecutar?"}]
+    st.session_state.messages = [{"role": "assistant", "content": f"Hola {user_name}, sistema Charly en línea. Mis datos provienen directamente de Supabase. ¿Qué buque o estadística deseas consultar?"}]
 
 df_actual = fetch_data()
 
@@ -142,23 +142,36 @@ for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         parser_charly(m["content"], df_actual)
 
-if prompt := st.chat_input("Escribe un comando..."):
+if prompt := st.chat_input("Consulta a Charly..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
     
     with st.chat_message("assistant"):
-        context = f"""Eres Charly, el agente operativo de {user_name}. Año: 2026.
-        No eres un chat pasivo. TIENES CAPACIDAD DE ACCIÓN mediante estos comandos:
-        - Para mostrar un buque: [FICHA: ID_DEL_BUQUE]
-        - Para editar en Supabase: [UPDATE: ID_DEL_BUQUE, riesgo, VALOR]
-        - Para gráficos: Usa bloques ```python con 'df' y 'fig'.
-        - Para tablas: Usa bloques ```csv con los datos solicitados.
+        # --- FILTRO ANTIALUCINACIONES ---
+        # Si el usuario pregunta por un nombre, buscamos coincidencias reales
+        match_info = ""
+        palabras = prompt.split()
+        for palabra in palabras:
+            if len(palabra) > 3: # Solo buscamos palabras con sentido
+                match = df_actual[df_actual['Nombre'].str.contains(palabra, case=False, na=False)]
+                if not match.empty:
+                    match_info += f"\nCOINCIDENCIA ENCONTRADA EN DB:\n{match.to_csv(index=False)}"
         
-        COLUMNAS REALES: {", ".join(df_actual.columns)}
+        context = f"""Eres Charly, analista de {user_name}. Año: 2026.
+        REGLA CRÍTICA: SOLO usa los datos de la tabla adjunta. Si un dato NO está en la tabla, di 'No tengo registro de esa información' y NO inventes IMO ni MMSI.
+        
+        TABLA DE DATOS DISPONIBLES:
+        {match_info if match_info else df_actual.head(50).to_csv(index=False)}
+        
+        HERRAMIENTAS:
+        - [FICHA: ID_BUQUE] para mostrar el perfil visual.
+        - [UPDATE: ID_BUQUE, riesgo, VALOR] para editar en Supabase.
+        - ```python ``` para gráficos con 'df' y 'fig'.
+        - ```csv ``` para tablas de datos.
         """
         try:
             res = modelo_ia.generate_content(context + f"\n{user_name}: " + prompt)
             parser_charly(res.text, df_actual)
             st.session_state.messages.append({"role": "assistant", "content": res.text})
             if "[UPDATE:" in res.text: st.rerun()
-        except Exception as e: st.error(f"Falla de conexión: {e}")
+        except Exception as e: st.error(f"Error: {e}")
