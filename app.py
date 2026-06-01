@@ -8,23 +8,34 @@ import json
 # --- 1. CONFIGURACIÓN Y ESTÉTICA PREMIUM MÁSTER ---
 st.set_page_config(page_title="Charly v2 - Centro de Análisis ReAct", page_icon="⚓", layout="wide")
 
+# Nueva hoja de estilos: Tonos oscuros profundos, bordes suavizados y tipografía limpia
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=300;400;600;800&family=JetBrains+Mono:wght=400&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=300;400;500;600;800&family=JetBrains+Mono:wght=400&display=swap');
     
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #07090E; color: #E2E8F0; }
-    .stApp { background-color: #07090E; }
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #0A0D14; color: #E2E8F0; }
+    .stApp { background-color: #0A0D14; }
     
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     
+    /* Burbujas de Chat Premium */
     .stChatMessage {
-        background: rgba(22, 27, 34, 0.6) !important;
-        border: 1px solid rgba(48, 54, 61, 0.8) !important;
-        border-radius: 16px !important;
+        background: rgba(20, 26, 38, 0.8) !important;
+        border: 1px solid rgba(45, 55, 72, 0.5) !important;
+        border-radius: 20px !important;
         padding: 1.5rem !important;
         margin-bottom: 1.2rem !important;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+    
+    /* Contenedor del Cargador de Archivos Principal */
+    .stExpander {
+        background: rgba(16, 22, 32, 0.7) !important;
+        border: 1px solid rgba(59, 130, 246, 0.3) !important;
+        border-radius: 16px !important;
+        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.05);
+        margin-bottom: 2rem !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -71,7 +82,6 @@ def ejecutar_sql(query: str) -> str:
         if not clean_query.lower().startswith("select"):
             return json.dumps({"status": "error", "mensaje": "Solo se permiten consultas SELECT de lectura."})
         
-        # Ejecutar consulta vía RPC remota
         res = supabase.rpc("ejecutar_sql", {"query": clean_query}).execute()
         
         if not res.data:
@@ -79,12 +89,11 @@ def ejecutar_sql(query: str) -> str:
             
         total_filas = len(res.data)
         
-        # ESCUDO ANTI-429: Si el resultado es masivo, lo interceptamos y renderizamos de forma directa
+        # ESCUDO ANTI-429: Interceptación masiva directa a pantalla
         if total_filas >= 15:
             df = pd.DataFrame(res.data)
             df.columns = [col.upper() for col in df.columns]
             
-            # Lo guardamos en la interfaz de Streamlit directamente sin pasar por los tokens de Gemini
             st.session_state.mensajes_ui.append({
                 "role": "assistant", 
                 "content": f"📊 **Resultados Optimizados:** Se han extraído {total_filas} registros de la base de datos y se desplegaron directamente en la pantalla para proteger la cuota del sistema.",
@@ -92,7 +101,6 @@ def ejecutar_sql(query: str) -> str:
             })
             st.session_state["necesita_rerun"] = True
             
-            # Le pasamos a Gemini solo una ficha técnica ultraligera de lo que se acaba de imprimir
             columnas = list(res.data[0].keys())
             muestra_inicial = res.data[:2]
             
@@ -105,7 +113,6 @@ def ejecutar_sql(query: str) -> str:
             }
             return json.dumps(resumen_ligero)
             
-        # Si el resultado es pequeño, se lo damos completo a Gemini para que lo lea sin riesgo de cuota
         return json.dumps(res.data)
         
     except Exception as e:
@@ -115,7 +122,6 @@ def ejecutar_sql(query: str) -> str:
 def renderizar_interfaz_visual(tipo: str, titulo: str, datos_en_json: str, x_col: str = None, y_col: str = None) -> dict:
     """
     Renderiza un componente visual interactivo (tabla, grafico_barras o grafico_torta) en la pantalla del usuario.
-    Usa esta función si los datos devueltos por ejecutar_sql fueron pequeños (<15) pero deseas darle un formato gráfico o de tabla limpia.
     """
     try:
         datos = json.loads(datos_en_json)
@@ -158,7 +164,7 @@ model = genai.GenerativeModel(
     
     TÚ ESQUEMA COGNITIVO (CICLO REACT):
     1. RAZONAR: Analiza la solicitud del usuario. Planifica la consulta SQL SELECT exacta utilizando este esquema: {esquema_base_datos}.
-    2. RECOMENDACIÓN DE EFICIENCIA: Para preguntas analíticas complejas (como buscar duplicados o contar registros), intenta escribir consultas SQL que agrupen o filtren (ej. usando COUNT, GROUP BY, HAVING) en lugar de descargar tablas completas.
+    2. RECOMENDACIÓN DE EFICIENCIA: Escribe consultas SQL optimizadas (ej. usando COUNT, GROUP BY, HAVING) en lugar de descargar tablas completas.
     3. ACTUAR: Invoca la herramienta `ejecutar_sql`.
     4. OBSERVACIÓN DINÁMICA: Lee la respuesta de la herramienta. 
        - Si el resultado de la consulta fue masivo (>=15 filas), la herramienta interceptará los datos, los pintará en la pantalla del usuario automáticamente y te devolverá un resumen con el conteo de filas y una pequeña muestra. Utiliza esa información resumida para elaborar tu conclusión.
@@ -175,22 +181,23 @@ if "chat" not in st.session_state:
     st.session_state.chat = model.start_chat(enable_automatic_function_calling=True)
 
 if "mensajes_ui" not in st.session_state:
-    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Centro de Análisis ReAct v2 Multimodal Estabilizado.** Operador **{operador}**, soporte para imágenes, PDFs y CSVs en línea con pasarela SQL protegida. Introduzca su requerimiento."}]
+    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Centro de Análisis ReAct v2 Multimodal Estabilizado.** Operador **{operador}**, pasarela SQL e interfaz multimedia unificada en panel central. Introduzca su requerimiento."}]
 
-# --- 7. INTERFAZ DE CHAT Y DESPLIEGUE VISUAL REACTIVO ---
-st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Analista ReAct <span style='color: #3B82F6;'>Charly v2</span></h1>", unsafe_allow_html=True)
+# --- 7. INTERFAZ DE CHAT Y DESPLIEGUE VISUAL REDISEÑADO (TODO CENTRAL) ---
+st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Centro de Análisis <span style='color: #3B82F6;'>Charly v2</span></h1>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
 
-# 📁 CARGADOR MULTIMEDIA INTEGRADO EN LA BARRA LATERAL
-with st.sidebar:
-    st.markdown("### 📎 Adjuntar Documentación")
+# 📎 EL CARGADOR MULTIMEDIA AHORA VIVE AL FRENTE (NUNCA SE OCULTA)
+with st.expander("📎 ADJUNTAR DOCUMENTACIÓN EXTERNA (IMAGEN, PDF, CSV)"):
     archivo_adjunto = st.file_uploader(
-        "Sube una imagen, PDF o CSV para que Charly lo analice junto con tu consulta", 
-        type=["png", "jpg", "jpeg", "pdf", "csv"]
+        "Sube un archivo para que Charly lo analice junto con tu consulta de base de datos", 
+        type=["png", "jpg", "jpeg", "pdf", "csv"],
+        label_visibility="collapsed"
     )
     if archivo_adjunto:
-        st.success(f"Archivo cargado: {archivo_adjunto.name}")
+        st.info(f"📁 Documento cargado con éxito en el búfer central: **{archivo_adjunto.name}**")
 
-# Pintar el historial reactivamente
+# Pintar el historial de chat en el contenedor principal
 for msg in st.session_state.mensajes_ui:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
@@ -209,11 +216,10 @@ for msg in st.session_state.mensajes_ui:
                 fig = px.pie(df_visual, names=v["x"], values=v["y"], title=v["titulo"], template="plotly_dark")
                 st.plotly_chart(fig, use_container_width=True)
 
-# Captura de prompts e inyección mixta de archivos
+# Captura de prompts e inyección mixta de archivos en la columna unificada
 if prompt := st.chat_input("Ordene cualquier consulta analítica o auditoría cruzada..."):
     st.session_state["necesita_rerun"] = False
     
-    # Si hay un adjunto en la sidebar, modificamos la cadena visible para avisar al operador
     texto_mostrar = prompt
     if archivo_adjunto:
         texto_mostrar = f"📎 *[Archivo adjunto: {archivo_adjunto.name}]*\n\n{prompt}"
@@ -225,11 +231,9 @@ if prompt := st.chat_input("Ordene cualquier consulta analítica o auditoría cr
     with st.chat_message("assistant"):
         with st.spinner("Ejecutando ciclo ReAct (Razonamiento, Acción y Observación)..."):
             try:
-                # Iniciar el contenedor mixto de mensaje hacia el SDK de Gemini
                 contenido_mensaje = [prompt]
                 
                 if archivo_adjunto:
-                    # Extraer el flujo de bytes binarios del buffer cargado
                     bytes_archivo = archivo_adjunto.getvalue()
                     estructura_multimedia = {
                         "mime_type": archivo_adjunto.type,
@@ -237,7 +241,6 @@ if prompt := st.chat_input("Ordene cualquier consulta analítica o auditoría cr
                     }
                     contenido_mensaje.append(estructura_multimedia)
                 
-                # Envío continuo de la estructura de contenido mixto
                 respuesta = st.session_state.chat.send_message(contenido_mensaje)
                 st.markdown(respuesta.text)
                 st.session_state.mensajes_ui.append({"role": "assistant", "content": respuesta.text})
