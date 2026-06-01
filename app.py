@@ -5,8 +5,8 @@ import pandas as pd
 import plotly.express as px
 import json
 
-# --- 1. CONFIGURACIÓN Y ESTÉTICA PREMIUM MÁSTER ---
-st.set_page_config(page_title="Charly - Centro de Análisis", page_icon="⚓", layout="wide")
+# --- 1. CONFIGURACIÓN Y ESTÉTICA PREMIUM ---
+st.set_page_config(page_title="Charly v2 - Centro de Análisis ReAct", page_icon="⚓", layout="wide")
 
 st.markdown("""
 <style>
@@ -18,7 +18,7 @@ st.markdown("""
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     
     .stChatMessage {
-        background: rgba(22, 27, 24, 0.6) !important;
+        background: rgba(22, 27, 34, 0.6) !important;
         border: 1px solid rgba(48, 54, 61, 0.8) !important;
         border-radius: 16px !important;
         padding: 1.5rem !important;
@@ -59,209 +59,88 @@ def init_connections():
 
 supabase = init_connections()
 
-# --- 4. ARSENAL DE PROCESAMIENTO GENERAL ---
+# --- 4. LA HERRAMIENTA UNIVERSAL REACT V2 (NÚCLEO DEL AGENTE) ---
 
-def consultar_tabla_general(tabla: str, columna_filtro: str = None, valor_filtro: str = None) -> dict:
+def ejecutar_sql(query: str) -> str:
     """
-    Consulta cualquier tabla de la base de datos permitiendo filtrar por una columna y un valor específico.
-    Usa esta función para responder CUALQUIER tema general, listados de empresas, tipos de pesca, operaciones globales, catálogos o cualquier pregunta independiente del tema.
-    Tablas disponibles: 'buques_identidad', 'buques_maestro', 'operaciones', 'navegaciones_zeea', 'cat_banderas', 'cat_tipos_pesca', 'cat_empresas'.
+    Ejecuta de manera directa una consulta SQL de tipo SELECT en la base de datos y devuelve las filas resultantes en formato JSON.
+    Permite realizar auditorías de duplicados, comparaciones por cualquier columna (IMO, MMSI), cálculos estadísticos, promedios y relaciones complejas.
+    Solo se admiten instrucciones SELECT de lectura.
     """
     try:
-        tablas_permitidas = ['buques_identidad', 'buques_maestro', 'operaciones', 'navegaciones_zeea', 'cat_banderas', 'cat_tipos_pesca', 'cat_empresas']
-        if tabla not in tablas_permitidas:
-            return {"status": "error", "mensaje": f"La tabla '{tabla}' no está autorizada o no existe."}
+        # Validación de seguridad básica en la capa de la aplicación
+        clean_query = query.strip()
+        if not clean_query.lower().startswith("select"):
+            return json.dumps({"status": "error", "mensaje": "Restricción de seguridad: Solo se permiten consultas SELECT de lectura."})
         
-        query = supabase.table(tabla).select("*")
-        
-        if columna_filtro and valor_filtro:
-            query = query.ilike(columna_filtro, f"%{valor_filtro}%")
-            
-        res = query.limit(150).execute()
+        # Invocación remota segura mediante la pasarela HTTPS RPC
+        res = supabase.rpc("ejecutar_sql", {"query": clean_query}).execute()
         
         if not res.data:
-            return {"status": "success", "mensaje": f"No se encontraron registros en la tabla '{tabla}' para los criterios solicitados."}
+            return json.dumps({"status": "success", "mensaje": "La consulta se ejecutó correctamente pero devolvió 0 registros."})
             
-        df = pd.DataFrame(res.data)
+        # Retorna el JSON crudo directo a la ventana de observación de Gemini
+        return json.dumps(res.data)
+    except Exception as e:
+        return json.dumps({"status": "error", "mensaje": str(e)})
+
+
+def renderizar_interfaz_visual(tipo: str, titulo: str, datos_en_json: str, x_col: str = None, y_col: str = None) -> dict:
+    """
+    Renderiza de forma interactiva un componente visual (tabla, grafico_barras o grafico_torta) en la pantalla del usuario.
+    Usa esta función en el paso final de tu razonamiento si los datos merecen ser tabulados o graficados para el operador.
+    - datos_en_json: String con la estructura limpia de los registros finales a mostrar.
+    """
+    try:
+        datos = json.loads(datos_en_json)
+        df = pd.DataFrame(datos)
         df.columns = [col.upper() for col in df.columns]
+        
+        # Convertir columnas x e y a mayúsculas si se proveen para hacer match con el dataframe purgado
+        x_purgado = x_col.upper() if x_col else None
+        y_purgado = y_col.upper() if y_col else None
         
         st.session_state.mensajes_ui.append({
             "role": "assistant", 
-            "content": f"📊 **Resultados del Sistema:** Registros extraídos de la tabla `{tabla}`.",
-            "visualizacion": {"tipo": "tabla", "datos": df.to_dict(orient="records")}
+            "content": f"📊 **Visualización Generada:** {titulo}",
+            "visualizacion": {"tipo": tipo, "datos": df.to_dict(orient="records"), "x": x_purgado, "y": y_purgado, "titulo": titulo}
         })
         st.session_state["necesita_rerun"] = True
-        return {"status": "success", "mensaje": f"Se proyectaron {len(df)} filas de la tabla {tabla} directamente en la pantalla. Informa al usuario de manera directa."}
+        return {"status": "success", "mensaje": "Componente proyectado en la pantalla del usuario."}
     except Exception as e:
         return {"status": "error", "mensaje": str(e)}
 
+herramientas_react = [ejecutar_sql, renderizar_interfaz_visual]
 
-def buscar_perfil_buque(identificador: str) -> dict:
-    """
-    Busca información de identidad y características físicas estructurales de un buque específico por su nombre o MMSI.
-    """
-    try:
-        res = supabase.table("buques_identidad").select(
-            "id_buque, nombre, mmsi, riesgo, indicativo_llamada, "
-            "cat_banderas(nombre), cat_tipos_pesca(nombre), cat_empresas(nombre)"
-        ).or_(f"nombre.ilike.%{identificador}%,mmsi.eq.{identificador}").execute()
-        
-        if not res.data:
-            return {"status": "error", "mensaje": f"No se encontró el buque: {identificador}"}
-        
-        id_buque = res.data[0]['id_buque']
-        res_maestro = supabase.table("buques_maestro").select(
-            "eslora, arqueo_bruto, fecha_construccion, imo"
-        ).eq("id_buque", id_buque).execute()
+# --- 5. ESQUEMA DE DATOS PARA ORIENTACIÓN DEL MODELO ---
+esquema_base_datos = """
+Tablas y Columnas del Sistema:
+1. Table 'cat_banderas': id_bandera (int4, PK), nombre (varchar)
+2. Table 'cat_tipos_pesca': id_tipo (int4, PK), nombre (varchar)
+3. Table 'cat_empresas': id_empresa (varchar, PK), nombre (varchar), imo (varchar), direccion (text)
+4. Table 'buques_maestro': id_buque (varchar, PK), imo (varchar), eslora (numeric), arqueo_bruto (numeric), fecha_construccion (varchar)
+5. Table 'buques_identidad': id_historial (uuid, PK), id_buque (varchar), nombre (varchar), id_bandera (int4), mmsi (varchar), mmsi_2 (varchar), indicativo_llamada (varchar), id_tipo (int4), id_empresa (varchar), riesgo (varchar), es_actual (bool)
+6. Table 'operaciones': id_operacion (varchar, PK), id_buque (varchar), puerto_origen (varchar), fecha_zarpada (varchar), area_procedente (varchar), area_fao_procedente (varchar), temporada (varchar), fecha_ingreso_area (varchar), area_ingreso (varchar), puertos_operaciones (text), cantidad_arribos (int4), encuentros (text), operó_en_zeea (varchar), operó_en_adyacente (varchar), operó_en_malvinas (varchar), salida_destino (varchar), fecha_egreso (varchar), puerto_amarre (varchar), fecha_amarre (varchar)
+7. Table 'navegaciones_zeea': id_registro (varchar, PK), id_buque (varchar), fecha_ingreso_zeea (varchar), procedencia (varchar), fecha_egreso_zeea (varchar), destino (varchar)
+"""
 
-        return {
-            "status": "success", 
-            "identidad": res.data, 
-            "datos_fisicos": res_maestro.data if res_maestro.data else "No disponibles"
-        }
-    except Exception as e:
-        return {"status": "error", "mensaje": str(e)}
-
-
-def consultar_historial_operaciones(identificador: str) -> dict:
-    """
-    Consulta y despliega el historial cronológico completo de operaciones y movimientos en la ZEEA de un buque específico (ej: XINRUN 579).
-    """
-    try:
-        res_id = supabase.table("buques_identidad").select("id_buque, nombre, mmsi").or_(f"nombre.ilike.%{identificador}%,mmsi.eq.{identificador}").execute()
-        if not res_id.data:
-            return {"status": "success", "mensaje": f"No se localizó el buque '{identificador}' en los registros de identidad."}
-        
-        id_buque = res_id.data[0]['id_buque']
-        nombre_real = res_id.data[0]['nombre']
-        
-        res_ops = supabase.table("operaciones").select(
-            "puerto_origen, fecha_zarpada, area_procedente, temporada, fecha_ingreso_area, area_ingreso, puerto_amarre, fecha_amarre"
-        ).eq("id_buque", id_buque).execute()
-        
-        res_zeea = supabase.table("navegaciones_zeea").select(
-            "fecha_ingreso_zeea, procedencia, fecha_egreso_zeea, destino"
-        ).eq("id_buque", id_buque).execute()
-        
-        tiene_registros = False
-        
-        if res_ops.data:
-            tiene_registros = True
-            df_ops = pd.DataFrame(res_ops.data)
-            df_ops.columns = [col.upper() for col in df_ops.columns]
-            st.session_state.mensajes_ui.append({
-                "role": "assistant", 
-                "content": f"📋 **Historial de Operaciones Portuarias** para el buque **{nombre_real}**:",
-                "visualizacion": {"tipo": "tabla", "datos": df_ops.to_dict(orient="records")}
-            })
-            
-        if res_zeea.data:
-            tiene_registros = True
-            df_zeea = pd.DataFrame(res_zeea.data)
-            df_zeea.columns = [col.upper() for col in df_zeea.columns]
-            st.session_state.mensajes_ui.append({
-                "role": "assistant", 
-                "content": f"⚓ **Historial de Navegaciones en ZEEA** para el buque **{nombre_real}**:",
-                "visualizacion": {"tipo": "tabla", "datos": df_zeea.to_dict(orient="records")}
-            })
-            
-        if not tiene_registros:
-            return {"status": "success", "mensaje": f"El buque '{nombre_real}' existe, pero no registra movimientos actualizados en las bitácoras históricas."}
-            
-        st.session_state["necesita_rerun"] = True
-        return {"status": "success", "mensaje": f"Historial de movimientos de {nombre_real} fijado en pantalla de forma exitosa."}
-    except Exception as e:
-        return {"status": "error", "mensaje": str(e)}
-
-
-def generar_reporte_buques_por_bandera(nombre_bandera: str) -> dict:
-    """
-    Filtra y despliega un listado de todos los buques de un país o bandera específica.
-    """
-    try:
-        res_bandera = supabase.table("cat_banderas").select("id_bandera, nombre").ilike("nombre", f"%{nombre_bandera}%").execute()
-        if not res_bandera.data:
-            return {"status": "success", "mensaje": f"La bandera '{nombre_bandera}' no consta en nuestros registros."}
-        
-        id_bandera = res_bandera.data[0]['id_bandera']
-        pais_real = res_bandera.data[0]['nombre']
-        
-        res_buques = supabase.table("buques_identidad").select("nombre, mmsi, riesgo, id_empresa").eq("id_bandera", id_bandera).execute()
-        if not res_buques.data:
-            return {"status": "success", "mensaje": f"Confirmado que actualmente constan 0 buques operando bajo la bandera de {pais_real}."}
-        
-        df = pd.DataFrame(res_buques.data)
-        
-        res_empresas = supabase.table("cat_empresas").select("id_empresa, nombre").execute()
-        if res_empresas.data:
-            df_emp = pd.DataFrame(res_empresas.data).rename(columns={"nombre": "Empresa"})
-            df = df.merge(df_emp, on="id_empresa", how="left").drop(columns=["id_empresa"], errors="ignore")
-        
-        df.columns = [col.upper() for col in df.columns]
-
-        st.session_state.mensajes_ui.append({
-            "role": "assistant", 
-            "content": f"📊 **Listado General:** Flota registrada bajo la bandera de **{pais_real}**.",
-            "visualizacion": {"tipo": "tabla", "datos": df.to_dict(orient="records")}
-        })
-        st.session_state["necesita_rerun"] = True
-        return {"status": "success", "mensaje": f"Encontrados {len(df)} buques. Tabla desplegada."}
-    except Exception as e:
-        return {"status": "error", "mensaje": str(e)}
-
-
-def generar_grafico_distribucion(variable_analisis: str) -> dict:
-    """
-    Genera y procesa gráficos estadísticos de la flota completa ('riesgo' o 'bandera').
-    """
-    try:
-        res_buques = supabase.table("buques_identidad").select("riesgo, id_bandera").execute()
-        df = pd.DataFrame(res_buques.data)
-        
-        if variable_analisis == "riesgo":
-            df_df = df['riesgo'].value_counts().reset_index()
-            df_df.columns = ['Nivel de Riesgo', 'Cantidad']
-            st.session_state.mensajes_ui.append({
-                "role": "assistant", 
-                "content": "📊 **Análisis:** Distribución de los Niveles de Riesgo en la Flota.",
-                "visualizacion": {"tipo": "grafico_torta", "datos": df_df.to_dict(orient="records"), "x": "Nivel de Riesgo", "y": "Cantidad", "titulo": "Distribución General de Riesgos"}
-            })
-        elif variable_analisis == "bandera":
-            res_banderas = supabase.table("cat_banderas").select("id_bandera, nombre").execute()
-            df_band = pd.DataFrame(res_banderas.data).rename(columns={"nombre": "Bandera"})
-            df = df.merge(df_band, on="id_bandera", how="left")
-            df_df = df['Bandera'].value_counts().reset_index()
-            df_df.columns = ['Bandera', 'Cantidad de Buques']
-            
-            st.session_state.mensajes_ui.append({
-                "role": "assistant", 
-                "content": "📊 **Análisis:** Volumen de Buques por Bandera Registrada.",
-                "visualizacion": {"tipo": "grafico_barras", "datos": df_df.to_dict(orient="records"), "x": "Bandera", "y": "Cantidad de Buques", "titulo": "Flota por Pabellón"}
-            })
-            
-        st.session_state["necesita_rerun"] = True
-        return {"status": "success", "mensaje": f"Gráfico de {variable_analisis} desplegado en la UI."}
-    except Exception as e:
-        return {"status": "error", "mensaje": str(e)}
-
-herramientas_charly = [consultar_tabla_general, buscar_perfil_buque, consultar_historial_operaciones, generar_reporte_buques_por_bandera, generar_grafico_distribucion]
-
-# --- 5. CONFIGURACIÓN DEL AGENTE INTELIGENTE ---
+# --- 6. CONFIGURACIÓN DEL AGENTE DE INTELIGENCIA REACT ---
 model = genai.GenerativeModel(
     model_name='gemini-3.1-flash-lite', 
-    tools=herramientas_charly,
+    tools=herramientas_react,
     system_instruction=f"""
-    Eres Charly, un analista de datos experto especializado en la base de datos de la flota de buques para el Operador {operador}.
+    Eres Charly v2, un agente de análisis de datos avanzado configurado bajo el framework ReAct para el Operador {operador}.
     
-    INSTRUCCIONES DIRECTAS DE ATENCIÓN:
-    1. Debes responder CUALQUIER tipo de consulta sobre la base de datos independientemente del tema (empresas, operaciones, navegaciones, tipos de pesca, buques, etc.). No des excusas de falta de datos si tienes herramientas disponibles.
-    2. Si te preguntan por movimientos, historiales, zarpadas o qué hizo un barco específico, usa `consultar_historial_operaciones`.
-    3. Si te piden características físicas de un barco, usa `buscar_perfil_buque`.
-    4. Si te piden listas de un país, usa `generar_reporte_buques_por_bandera`.
-    5. Si te piden gráficos estadísticos generales, usa `generar_grafico_distribucion`.
-    6. PARA CUALQUIER OTRO TEMA (ej. listado de empresas, ver tipos de pesca, operaciones generales en un puerto, inspeccionar catálogos, etc.), utiliza obligatoriamente la función `consultar_tabla_general` especificando el nombre de la tabla y columnas si deseas filtrar.
-    7. Cuando una función se ejecute, el sistema pintará los datos en pantalla inmediatamente. Informa al usuario de forma clara, directa y muy profesional que la información correspondiente ya se encuentra desplegada en la pantalla.
-    8. Está estrictamente prohibido utilizar la palabra "táctica", "táctico" o modismos de simulación militar. Sé directo y ejecutivo.
+    TÚ ESQUEMA COGNITIVO (CICLO REACT):
+    1. RAZONAR: Analiza la solicitud del usuario. Identifica qué tablas necesitas consultar basándote en el siguiente esquema: {esquema_base_datos}. Planifica la consulta SQL SELECT exacta que resolverá el problema de forma óptima.
+    2. ACTUAR: Escribe la consulta SQL limpia y ejecútala invocando ÚNICAMENTE la herramienta `ejecutar_sql`.
+    3. OBSERVACIÓN DINÁMICA: Cuando la herramienta te devuelva las filas en formato JSON, leelas con atención. Tú eres el cerebro analítico. Inspecciona si hay valores duplicados, promedios, cruces o vacíos.
+    4. EVALUACIÓN DE SUFICIENCIA: Si los datos recolectados no bastan o necesitas cruzar otra tabla (ej. resolver nombres de empresas o banderas a partir de sus IDs), vuelve al paso 1 y genera un nuevo SQL. Itera las veces que sea necesario.
+    5. RESPUESTA FINAL: Cuando tengas la conclusión analítica exacta, si consideras útil desplegar los resultados en una tabla estructurada o gráfico para el usuario, invoca primero la función `renderizar_interfaz_visual`. Posteriormente redacta tu narrativa final de forma directa, concisa, profesional y ejecutiva.
+    
+    DIRECTRICES ESTRICTAS:
+    - Tienes visibilidad absoluta sobre el JSON que devuelve `ejecutar_sql`. Por ende, está estrictamente prohibido pedirle al usuario que verifique, cuente o busque datos de forma manual. Tú debes darle la respuesta masticada y el análisis final (ej. si hay duplicados, indica cuáles son y cuántas veces se repiten exactamente).
+    - No uses bajo ningún concepto la palabra "táctica", "táctico" ni modismos de simulación militar. Sé directo y de alta corporatividad.
     """
 )
 
@@ -269,10 +148,10 @@ if "chat" not in st.session_state:
     st.session_state.chat = model.start_chat(enable_automatic_function_calling=True)
 
 if "mensajes_ui" not in st.session_state:
-    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Sistema de Análisis Online.** Operador **{operador}**, bases de datos integradas y listas para consultas multipropósito de cualquier índole. ¿Qué información requiere?"}]
+    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Centro de Análisis ReAct v2 Online.** Operador **{operador}**, pasarela SQL universal activa sobre protocolo HTTPS. Introduzca su consulta analítica."}]
 
-# --- 6. INTERFAZ DE CHAT Y DESPLIEGUE VISUAL (FRONTEND) ---
-st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Analista Naval <span style='color: #3B82F6;'>Charly</span></h1>", unsafe_allow_html=True)
+# --- 7. INTERFAZ DE CHAT Y DESPLIEGUE VISUAL REACTIVO ---
+st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Analista ReAct <span style='color: #3B82F6;'>Charly v2</span></h1>", unsafe_allow_html=True)
 
 for msg in st.session_state.mensajes_ui:
     with st.chat_message(msg["role"]):
@@ -292,14 +171,14 @@ for msg in st.session_state.mensajes_ui:
                 fig = px.pie(df_visual, names=v["x"], values=v["y"], title=v["titulo"], template="plotly_dark")
                 st.plotly_chart(fig, use_container_width=True)
 
-if prompt := st.chat_input("Introduzca su consulta sobre cualquier dato o historial..."):
+if prompt := st.chat_input("Ordene cualquier consulta analítica o auditoría cruzada..."):
     st.session_state["necesita_rerun"] = False
     st.session_state.mensajes_ui.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Procesando consulta en la base de datos general..."):
+        with st.spinner("Ejecutando ciclo ReAct (Razonamiento, Acción y Observación)..."):
             try:
                 respuesta = st.session_state.chat.send_message(prompt)
                 st.markdown(respuesta.text)
@@ -309,4 +188,4 @@ if prompt := st.chat_input("Introduzca su consulta sobre cualquier dato o histor
                     st.session_state["necesita_rerun"] = False
                     st.rerun()
             except Exception as api_e:
-                st.error(f"Fallo de enlace de comunicaciones: {api_e}")
+                st.error(f"Fallo de comunicación en el bucle ReAct: {api_e}")
