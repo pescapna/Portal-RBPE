@@ -4,10 +4,10 @@ from supabase import create_client, Client
 import pandas as pd
 import plotly.express as px
 import json
-import uuid  # Para la auto-generación de IDs únicos seguros
+import uuid
 
-# --- 1. CONFIGURACIÓN Y ESTÉTICA PREMIUM ---
-st.set_page_config(page_title="Charly v2 - Centro de Análisis", page_icon="⚓", layout="wide")
+# --- 1. CONFIGURACIÓN Y ESTÉTICA PREMIUM MÁSTER ---
+st.set_page_config(page_title="Charly v2 - Centro de Gestión", page_icon="⚓", layout="wide")
 
 st.markdown("""
 <style>
@@ -32,6 +32,7 @@ st.markdown("""
         border: 1px solid rgba(48, 54, 61, 0.6) !important;
         border-radius: 16px;
         padding: 2rem;
+        margin-bottom: 1.5rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -66,14 +67,14 @@ def init_connections():
 
 supabase = init_connections()
 
-# --- 4. ARSENAL DE FUNCIONES INTERNAS (BACKEND) ---
+# --- 4. ARSENAL DE PROCESAMIENTO SEGURO (BACKEND) ---
 
 def ejecutar_sql(query: str) -> str:
     """Ejecuta una consulta SQL SELECT en la base de datos y devuelve formato JSON."""
     try:
         clean_query = query.strip()
         if not clean_query.lower().startswith("select"):
-            return json.dumps({"status": "error", "mensaje": "Solo se permiten consultas SELECT de lectura."})
+            return json.dumps({"status": "error", "mensaje": "Solo se permiten consultas SELECT de lectura por seguridad."})
         res = supabase.rpc("ejecutar_sql", {"query": clean_query}).execute()
         if not res.data:
             return json.dumps({"status": "success", "mensaje": "Consulta con 0 registros de respuesta."})
@@ -94,10 +95,23 @@ def ejecutar_sql(query: str) -> str:
     except Exception as e:
         return json.dumps({"status": "error", "mensaje": str(e)})
 
-def registrar_nuevo_buque_backend(registro_dict: dict) -> bool:
-    """Inserta el diccionario del buque de forma directa en Supabase."""
+def registrar_buque_transaccion(maestro_dict: dict, identidad_dict: dict) -> bool:
+    """Inserta de forma ordenada en buques_maestro y luego en buques_identidad para evitar fallos de integridad."""
     try:
-        res = supabase.table("buques_identidad").insert(registro_dict).execute()
+        # 1. Insertar características físicas en la tabla maestra
+        res_m = supabase.table("buques_maestro").insert(maestro_dict).execute()
+        if not res_m.data:
+            return False
+        # 2. Insertar datos de identidad con el mismo id_buque vinculado
+        res_i = supabase.table("buques_identidad").insert(identidad_dict).execute()
+        return True if res_i.data else False
+    except:
+        return False
+
+def registrar_tabla_directa(tabla: str, datos_dict: dict) -> bool:
+    """Realiza inserciones genéricas seguras en operaciones o navegaciones_zeea."""
+    try:
+        res = supabase.table(tabla).insert(datos_dict).execute()
         return True if res.data else False
     except:
         return False
@@ -120,25 +134,44 @@ def renderizar_interfaz_visual(tipo: str, titulo: str, datos_en_json: str, x_col
 
 herramientas_react = [ejecutar_sql, renderizar_interfaz_visual]
 
-# --- 5. ESQUEMA DE DATOS PARA EL CHAT ---
-esquema_base_datos = "Table 'buques_identidad' y catalogos relacionales ('cat_banderas', 'cat_empresas')."
-
-# --- 6. AGENTE INTELIGENTE DE DIÁLOGO ---
+# --- 5. CONFIGURACIÓN DEL AGENTE DE INTELIGENCIA CHAT ---
 model = genai.GenerativeModel(
     model_name='gemini-3.1-flash-lite', 
     tools=herramientas_react,
-    system_instruction=f"Eres Charly v2, un analista de datos experto bajo framework ReAct para el Operador {operador}. Responde consultas analíticas con lenguaje profesional y ejecutivo. Prohibido usar modismos militares o la palabra 'táctica'."
+    system_instruction=f"Eres Charly v2, un analista de datos experto bajo framework ReAct para el Operador {operador}. Responde consultas analíticas de forma concisa y ejecutiva. No uses modismos militares ni la palabra 'táctica'."
 )
 
 if "chat" not in st.session_state:
     st.session_state.chat = model.start_chat(enable_automatic_function_calling=True)
 if "mensajes_ui" not in st.session_state:
-    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Centro de Análisis Online.** Operador **{operador}**, sistemas de consulta listos. ¿Qué información de la flota desea evaluar?"}]
+    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Sistemas de Análisis Online.** Operador **{operador}**, bases de datos vinculadas por HTTPS. Dispuesto para consultas relacionales o auditorías."}]
 
-# --- 7. DISEÑO DE INTERFAZ EN PESTAÑAS (TABS) ---
-st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Centro de Control <span style='color: #3B82F6;'>Charly v2</span></h1>", unsafe_allow_html=True)
+# --- 6. DISEÑO DE INTERFAZ MULTI-PESTAÑA (TABS) ---
+st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Centro de Control General <span style='color: #3B82F6;'>Charly v2</span></h1>", unsafe_allow_html=True)
 
-tab_analisis, tab_registro = st.tabs(["📊 Centro de Análisis (Chat)", "📝 Registro Automatizado de Buques"])
+tab_analisis, tab_buque, tab_operacion, tab_zeea = st.tabs([
+    "📊 Centro de Análisis (Chat)", 
+    "🚢 Cargar Buque Completo", 
+    "📝 Registrar Operación", 
+    "🛰️ Navegación ZEEA"
+])
+
+# Carga de catálogos en tiempo real para poblar los formularios relacionales de forma limpia
+try:
+    banderas_res = supabase.table("cat_banderas").select("id_bandera, nombre").execute()
+    dict_banderas = {b['nombre']: b['id_bandera'] for b in banderas_res.data} if banderas_res.data else {}
+    
+    empresas_res = supabase.table("cat_empresas").select("id_empresa, nombre").execute()
+    dict_empresas = {e['nombre'] if e['nombre'] else f"ID: {e['id_empresa']}": e['id_empresa'] for e in empresas_res.data} if empresas_res.data else {}
+    
+    pesca_res = supabase.table("cat_tipos_pesca").select("id_tipo, nombre").execute()
+    dict_pesca = {p['nombre']: p['id_tipo'] for p in pesca_res.data} if pesca_res.data else {}
+    
+    buques_res = supabase.table("buques_identidad").select("id_buque, nombre").eq("es_actual", True).execute()
+    dict_buques = {b['nombre']: b['id_buque'] for b in buques_res.data} if buques_res.data else {}
+except Exception as e:
+    st.error(f"Fallo de sincronización con catálogos centrales: {e}")
+    dict_banderas, dict_empresas, dict_pesca, dict_buques = {}, {}, {}, {}
 
 # =====================================================================
 # PESTAÑA 1: CHAT ANALÍTICO LIBRE
@@ -150,8 +183,7 @@ with tab_analisis:
             if "visualizacion" in msg:
                 v = msg["visualizacion"]
                 df_visual = pd.DataFrame(v["datos"])
-                if v["tipo"] == "tabla":
-                    st.dataframe(df_visual, use_container_width=True)
+                if v["tipo"] == "tabla": st.dataframe(df_visual, use_container_width=True)
                 elif v["tipo"] == "grafico_barras":
                     fig = px.bar(df_visual, x=v["x"], y=v["y"], title=v["titulo"], template="plotly_dark")
                     fig.update_traces(marker_color='#3B82F6')
@@ -160,12 +192,12 @@ with tab_analisis:
                     fig = px.pie(df_visual, names=v["x"], values=v["y"], title=v["titulo"], template="plotly_dark")
                     st.plotly_chart(fig, use_container_width=True)
 
-    if prompt := st.chat_input("Consulte duplicados, historiales o datos generales..."):
+    if prompt := st.chat_input("Consulte duplicados, auditorías o cruces generales de tablas..."):
         st.session_state["necesita_rerun"] = False
         st.session_state.mensajes_ui.append({"role": "user", "content": prompt})
         with st.chat_message("user"): st.markdown(prompt)
         with st.chat_message("assistant"):
-            with st.spinner("Analizando información..."):
+            with st.spinner("Procesando consulta analítica..."):
                 try:
                     respuesta = st.session_state.chat.send_message(prompt)
                     st.markdown(respuesta.text)
@@ -176,96 +208,170 @@ with tab_analisis:
                 except Exception as e: st.error(f"Error: {e}")
 
 # =====================================================================
-# PESTAÑA 2: FORMULARIO AUTOMATIZADO CON AUDITORÍA DE ANOMALÍAS
+# PESTAÑA 2: CARGAR BUQUE COMPLETO (MAESTRO + IDENTIDAD)
 # =====================================================================
-with tab_registro:
-    st.markdown("### 📝 Alta de Unidades en el Sistema")
-    st.write("Complete la información comercial e identificativa del buque. El sistema resolverá los identificadores relacionales y auditará anomalías automáticamente.")
+with tab_buque:
+    st.markdown("### 🚢 Alta de Unidades e Infraestructura Física")
+    st.write("Este módulo ingresa de forma simultánea los datos de ingeniería estructural y la identidad comercial de la embarcación.")
+    
+    with st.form("form_alta_buque_completo"):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Identidad y Clasificación**")
+            b_nombre = st.text_input("Nombre de la Embarcación *", placeholder="Ej: XINRUN 579").strip()
+            b_mmsi = st.text_input("Número MMSI *", placeholder="Ej: 224142000").strip()
+            b_bandera = st.selectbox("Pabellón / Nacionalidad", list(dict_banderas.keys()))
+            b_empresa = st.selectbox("Empresa Propietaria", list(dict_empresas.keys()))
+            b_tipo = st.selectbox("Artes de Pesca autorizadas", list(dict_pesca.keys()))
+            b_riesgo = st.selectbox("Asignación de Riesgo", ["Bajo", "Medio", "Alto"])
+            b_llamada = st.text_input("Indicativo de Llamada", placeholder="Ej: LI2345").strip()
+        with c2:
+            st.markdown("**Características de Ingeniería (Datos Maestro)**")
+            b_imo = st.text_input("Número IMO *", placeholder="Ej: 9842293").strip()
+            b_eslora = st.number_input("Eslora Total (Metros)", min_value=0.0, step=0.1, format="%.1f")
+            b_arqueo = st.number_input("Arqueo Bruto (TRG)", min_value=0.0, step=1.0)
+            b_construccion = st.text_input("Fecha de Construcción", placeholder="Ej: 2018-12-01").strip()
+            
+        btn_auditar_b = st.form_submit_button("🛡️ AUDITAR REGISTRO Y PREVISUALIZAR ESTRUCTURA")
 
-    # Carga dinámica de catálogos desde Supabase para poblar los selectores
-    try:
-        banderas_res = supabase.table("cat_banderas").select("id_bandera, nombre").execute()
-        dict_banderas = {item['nombre']: item['id_bandera'] for item in banderas_res.data} if banderas_res.data else {}
-        
-        empresas_res = supabase.table("cat_empresas").select("id_empresa, nombre").execute()
-        dict_empresas = {item['nombre'] if item['nombre'] else f"ID: {item['id_empresa']}": item['id_empresa'] for item in empresas_res.data} if empresas_res.data else {}
-    except Exception as e:
-        st.error(f"Error al conectar con los catálogos del servidor: {e}")
-        dict_banderas, dict_empresas = {}, {}
-
-    # Estructura del Formulario de Entrada
-    with st.form("formulario_alta_buque"):
-        col_form1, col_form2 = st.columns(2)
-        with col_form1:
-            input_nombre = st.text_input("Nombre del Buque *", placeholder="Ej: XINRUN 579").strip()
-            input_mmsi = st.text_input("Número MMSI *", placeholder="Ej: 224142000 (9 dígitos)").strip()
-            input_riesgo = st.selectbox("Clasificación de Riesgo *", ["Bajo", "Medio", "Alto"])
-        
-        with col_form2:
-            input_bandera = st.selectbox("Pabellón / Bandera *", list(dict_banderas.keys()))
-            input_empresa = st.selectbox("Empresa Propietaria/Operadora *", list(dict_empresas.keys()))
-            input_llamada = st.text_input("Indicativo de Llamada (Opcional)", placeholder="Ej: LI2345").strip()
-
-        btn_auditar = st.form_submit_button("🛡️ AUDITAR REGISTRO Y PREVISUALIZAR BLOCK JSON")
-
-    # Lógica del botón de procesamiento y control de estados
-    if btn_auditar:
-        # Validación de campos requeridos vacíos en el Frontend
-        if not input_nombre or not input_mmsi:
-            st.error("Error de entrada: El 'Nombre del Buque' y el 'Número MMSI' son obligatorios.")
-        elif len(input_mmsi) != 9 or not input_mmsi.isdigit():
-            st.error("Anomalía de formato: El código MMSI debe estar compuesto estrictamente por 9 caracteres numéricos.")
+    if btn_auditar_b:
+        if not b_nombre or not b_mmsi or not b_imo:
+            st.error("Error de entrada: Nombre, MMSI e IMO son campos obligatorios.")
+        elif len(b_mmsi) != 9 or not b_mmsi.isdigit():
+            st.error("Anomalía de formato: El código MMSI debe poseer exactamente 9 dígitos numéricos.")
         else:
-            with st.spinner("Ejecutando auditoría cruzada de consistencia..."):
-                # Ejecutar verificaciones en Supabase para detectar anomalías de duplicados
-                nombre_duplicado = supabase.table("buques_identidad").select("nombre").ilike("nombre", input_nombre).execute()
-                mmsi_duplicado = supabase.table("buques_identidad").select("mmsi").eq("mmsi", input_mmsi).execute()
+            with st.spinner("Buscando colisiones de identidad en el servidor..."):
+                dup_nombre = supabase.table("buques_identidad").select("nombre").ilike("nombre", b_nombre).execute()
+                dup_mmsi = supabase.table("buques_identidad").select("mmsi").eq("mmsi", b_mmsi).execute()
+                dup_imo = supabase.table("buques_maestro").select("imo").eq("imo", b_imo).execute()
                 
-                anomalies = []
-                if nombre_duplicado.data:
-                    anomalies.append(f"Alerta: Ya existe un buque registrado con el nombre '{input_nombre.upper()}' en la base de datos.")
-                if mmsi_duplicado.data:
-                    anomalies.append(f"Alerta: El número MMSI '{input_mmsi}' ya está asignado a otra unidad registrada.")
-
-                # Imprimir informe de auditoría
-                if anomalies:
+                anomalias = []
+                if dup_nombre.data: anomalias.append(f"El nombre '{b_nombre.upper()}' ya consta asignado a un buque.")
+                if dup_mmsi.data: anomalias.append(f"El número MMSI '{b_mmsi}' ya está ocupado.")
+                if dup_imo.data: anomalias.append(f"El número IMO '{b_imo}' ya existe en el registro maestro.")
+                
+                if anomalias:
                     st.warning("### ⚠️ Anomalías Críticas Detectadas")
-                    for a in anomalies: st.write(f"- {a}")
-                    st.session_state["bloque_confirmado"] = None
+                    for a in anomalias: st.write(f"- {a}")
+                    st.session_state["preview_buque"] = None
                 else:
-                    st.success("###  Auditoría de Consistencia: Sin anomalías detectadas")
-                    st.write("La información es válida y no genera colisiones de identidad en los registros actuales.")
+                    st.success("###  Consistencia de Datos Homologada")
+                    id_buque_nuevo = f"BQ-{b_nombre[:3].upper()}-{uuid.uuid4().hex[:5].upper()}"
                     
-                    # Generación automática y transparente del ID de Buque único
-                    id_generado = f"BQ-{input_nombre[:3].upper()}-{uuid.uuid4().hex[:5].upper()}"
-                    
-                    # Ensamblar el bloque de información estructurado en formato TOML/JSON listo para el Operador
-                    bloque_informacion = {
-                        "id_buque": id_generado,
-                        "nombre": input_nombre.upper(),
-                        "mmsi": input_mmsi,
-                        "id_bandera": dict_banderas[input_bandera],
-                        "id_empresa": dict_empresas[input_empresa],
-                        "indicativo_llamada": input_llamada if input_llamada else None,
-                        "riesgo": input_riesgo,
-                        "es_actual": True
+                    st.session_state["preview_buque"] = {
+                        "maestro": {
+                            "id_buque": id_buque_nuevo, "imo": b_imo, "eslora": b_eslora if b_eslora > 0 else None,
+                            "arqueo_bruto": b_arqueo if b_arqueo > 0 else None, "fecha_construccion": b_construccion if b_construccion else None
+                        },
+                        "identidad": {
+                            "id_buque": id_buque_nuevo, "nombre": b_nombre.upper(), "mmsi": b_mmsi,
+                            "id_bandera": dict_banderas[b_bandera], "id_empresa": dict_empresas[b_empresa],
+                            "id_tipo": dict_pesca[b_tipo], "indicativo_llamada": b_llamada if b_llamada else None,
+                            "riesgo": b_riesgo, "es_actual": True
+                        }
                     }
-                    
-                    # Almacenamos el bloque temporalmente en la sesión para que sobreviva al refresco de Streamlit
-                    st.session_state["bloque_confirmado"] = bloque_informacion
 
-    # Fase de confirmación explícita (Muestra el JSON y habilita el botón físico final)
-    if st.session_state.get("bloque_confirmado") is not None:
+    if st.session_state.get("preview_buque") is not None:
         st.markdown("---")
-        st.markdown("### 📋 Estructura Completa del Bloque de Información (Previsualización)")
-        st.json(st.session_state["bloque_confirmado"])
-        
-        st.write("¿Confirma el ingreso permanente de este bloque de información estructurado en la base de datos?")
-        
-        if st.button("CONFIRMAR E INSERTAR REGISTRO", use_container_width=True):
-            exito = registrar_nuevo_buque_backend(st.session_state["bloque_confirmado"])
+        st.markdown("### 📋 Estructura de Inserción Atómica (JSON)")
+        st.json(st.session_state["preview_buque"])
+        if st.button("CONFIRMAR E INSERTAR BUQUE COMPLETO", use_container_width=True):
+            exito = registrar_buque_transaccion(st.session_state["preview_buque"]["maestro"], st.session_state["preview_buque"]["identidad"])
             if exito:
-                st.success(f" Registro Guardado: La unidad '{st.session_state['bloque_confirmado']['nombre']}' fue dada de alta con éxito en el sistema.")
-                st.session_state["bloque_confirmado"] = None  # Limpiamos el buffer
+                st.success(f"Registro Consolidado: El buque '{st.session_state['preview_buque']['identidad']['nombre']}' fue dado de alta con sus características de ingeniería.")
+                st.session_state["preview_buque"] = None
+                st.rerun()
+            else: st.error("Fallo de escritura en el servidor remoto.")
+
+# =====================================================================
+# PESTAÑA 3: REGISTRAR OPERACIÓN PORTUARIA / EVENTO
+# =====================================================================
+with tab_operacion:
+    st.markdown("### 📝 Registro de Eventos y Operaciones Portuarias")
+    if not dict_buques: st.info("No hay buques disponibles en el sistema.")
+    else:
+        with st.form("form_alta_operacion"):
+            op_buque_name = st.selectbox("Seleccione el Buque Asociado *", list(dict_buques.keys()))
+            col_o1, col_o2 = st.columns(2)
+            with col_o1:
+                op_puerto = st.text_input("Puerto de Origen / Operación *", placeholder="Ej: Montevideo").strip()
+                op_zarpe = st.text_input("Fecha de Zarpada (AAAA-MM-DD) *", placeholder="Ej: 2026-03-15").strip()
+                op_procedencia = st.text_input("Área Procedente", placeholder="Ej: Alta Mar").strip()
+                op_temporada = st.text_input("Temporada Operativa", placeholder="Ej: 2026").strip()
+            with col_o2:
+                op_ingreso_area = st.text_input("Fecha de Ingreso al Área", placeholder="Ej: 2026-03-20").strip()
+                op_area_ing = st.text_input("Área de Ingreso", placeholder="Ej: Zona Común").strip()
+                op_puerto_amarre = st.text_input("Puerto de Amarre Final", placeholder="Ej: Puerto Madryn").strip()
+                op_fecha_amarre = st.text_input("Fecha de Amarre Final", placeholder="Ej: 2026-04-10").strip()
+                
+            btn_auditar_o = st.form_submit_button("🛡️ AUDITAR Y PREVISUALIZAR OPERACIÓN")
+
+        if btn_auditar_o:
+            if not op_puerto or not op_zarpe:
+                st.error("Error de entrada: El puerto de origen y la fecha de zarpada son requeridos.")
             else:
-                st.error("Fallo de escritura: No se pudo consolidar el registro en el servidor remoto.")
+                id_op_generado = f"OP-{uuid.uuid4().hex[:8].upper()}"
+                st.session_state["preview_op"] = {
+                    "id_operacion": id_op_generado,
+                    "id_buque": dict_buques[op_buque_name],
+                    "puerto_origen": op_puerto, "fecha_zarpada": op_zarpe,
+                    "area_procedente": op_procedencia if op_procedencia else None,
+                    "temporada": op_temporada if op_temporada else None,
+                    "fecha_ingreso_area": op_ingreso_area if op_ingreso_area else None,
+                    "area_income": op_area_ing if op_area_ing else None,
+                    "puerto_amarre": op_puerto_amarre if op_puerto_amarre else None,
+                    "fecha_amarre": op_fecha_amarre if op_fecha_amarre else None
+                }
+
+        if st.session_state.get("preview_op") is not None:
+            st.markdown("---")
+            st.json(st.session_state["preview_op"])
+            if st.button("CONFIRMAR E INSERTAR OPERACIÓN", use_container_width=True):
+                if registrar_tabla_directa("operaciones", st.session_state["preview_op"]):
+                    st.success("Bitácora Actualizada: El evento operacional fue registrado permanentemente.")
+                    st.session_state["preview_op"] = None
+                    st.rerun()
+                else: st.error("Error al consolidar la operación en el servidor.")
+
+# =====================================================================
+# PESTAÑA 4: REGISTRAR NAVEGACIÓN ZEEA (INCURSIONES)
+# =====================================================================
+with tab_zeea:
+    st.markdown("### 🛰️ Registro de Navegaciones e Incursiones en ZEEA")
+    if not dict_buques: st.info("No hay buques disponibles en el sistema.")
+    else:
+        with st.form("form_alta_zeea"):
+            z_buque_name = st.selectbox("Seleccione la Unidad *", list(dict_buques.keys()))
+            col_z1, col_z2 = st.columns(2)
+            with col_z1:
+                z_ingreso = st.text_input("Fecha Ingreso ZEEA *", placeholder="Ej: 2026-05-01 14:30:00").strip()
+                z_procedencia = st.text_input("Procedencia Inmediata", placeholder="Ej: Milla 201").strip()
+            with col_z2:
+                z_egreso = st.text_input("Fecha Egreso ZEEA", placeholder="Ej: 2026-05-05 08:15:00").strip()
+                z_destino = st.text_input("Destino Posterior", placeholder="Ej: Montevideo").strip()
+                
+            btn_auditar_z = st.form_submit_button("🛡️ AUDITAR Y PREVISUALIZAR NAVEGACIÓN")
+
+        if btn_auditar_z:
+            if not z_ingreso:
+                st.error("Error de entrada: La fecha de ingreso a la ZEEA es obligatoria.")
+            else:
+                id_z_generado = f"REG-{uuid.uuid4().hex[:8].upper()}"
+                st.session_state["preview_zeea"] = {
+                    "id_registro": id_z_generado,
+                    "id_buque": dict_buques[z_buque_name],
+                    "fecha_ingreso_zeea": z_ingreso,
+                    "procedencia": z_procedencia if z_procedencia else None,
+                    "fecha_egreso_zeea": z_egreso if z_egreso else None,
+                    "destino": z_destino if z_destino else None
+                }
+
+        if st.session_state.get("preview_zeea") is not None:
+            st.markdown("---")
+            st.json(st.session_state["preview_zeea"])
+            if st.button("CONFIRMAR E INSERTAR REGISTRO ZEEA", use_container_width=True):
+                if registrar_tabla_directa("navegaciones_zeea", st.session_state["preview_zeea"]):
+                    st.success("Registro Satelital Asentado: La navegación en ZEEA fue guardada de forma definitiva.")
+                    st.session_state["preview_zeea"] = None
+                    st.rerun()
+                else: st.error("Error al consolidar el registro ZEEA en el servidor.")
