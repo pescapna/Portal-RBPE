@@ -11,7 +11,7 @@ from supabase import create_client, Client
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(page_title="Portal RBPE - Súper Agente", page_icon="⚓", layout="wide")
 
-# --- CONEXIÓN DE DATOS (SUPABASE & GEMINI) ---
+# --- CONEXIÓN DE DATOS ---
 try:
     SUPABASE_URL = st.secrets["supabase"]["url"]
     SUPABASE_KEY = st.secrets["supabase"]["service_role_key"]
@@ -20,150 +20,150 @@ try:
     genai.configure(api_key=st.secrets["api"]["gemini_key"])
     modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"Error de Configuración: {e}")
+    st.error(f"Error de Configuración (Secrets): {e}")
     st.stop()
 
-# --- CSS: DARK PREMIUM TACTICAL ---
+# --- CSS: ESTILO DARK TÁCTICO ---
 st.markdown("""
 <style>
     .stApp { background-color: #0B0E14; color: #F1F5F9; }
     .stChatMessage { background-color: #121620 !important; border: 1px solid #21262D !important; border-radius: 12px !important; }
-    .buque-perfil { 
-        background: linear-gradient(145deg, #1e293b, #0f172a); 
-        border: 1px solid #3b82f6; border-radius: 15px; padding: 25px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.5); margin: 15px 0;
+    .vessel-profile { 
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); 
+        border: 2px solid #3b82f6; border-radius: 15px; padding: 25px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.6); margin: 20px 0;
     }
-    .stat-box { background: #161B22; padding: 10px; border-radius: 8px; border: 1px solid #30363D; text-align: center; }
+    .kpi-box { background: #161B22; padding: 12px; border-radius: 10px; border: 1px solid #30363D; text-align: center; }
+    .kpi-val { color: #F8FAFC; font-size: 1.4rem; font-weight: 700; display: block; }
+    .kpi-lab { color: #94A3B8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- FUNCIONES DE SOPORTE ---
+# --- CARGA DE DATOS OPTIMIZADA ---
 @st.cache_data(ttl=60)
-def cargar_flota_completa():
+def fetch_master_data():
     query = supabase.table("buques_identidad").select(
         "id_buque, nombre, mmsi, riesgo, buques_maestro(imo, eslora, arqueo_bruto, fecha_construccion), cat_banderas(nombre), cat_tipos_pesca(nombre)"
     ).execute()
-    data = []
+    flat_data = []
     for i in query.data:
         m = i.get("buques_maestro") or {}
-        data.append({
+        flat_data.append({
             "id_buque": i["id_buque"], "Nombre": i["nombre"], "MMSI": i["mmsi"], "Riesgo": i["riesgo"],
             "IMO": m.get("imo"), "Eslora": m.get("eslora"), "Arqueo": m.get("arqueo_bruto"),
-            "Construccion": m.get("fecha_construccion"), "Bandera": i["cat_banderas"]["nombre"], "Tipo": i["cat_tipos_pesca"]["nombre"]
+            "Construccion": m.get("fecha_construccion"), 
+            "Bandera": i["cat_banderas"]["nombre"] if i.get("cat_banderas") else "Desconocida",
+            "Tipo": i["cat_tipos_pesca"]["nombre"] if i.get("cat_tipos_pesca") else "Otros"
         })
-    return pd.DataFrame(data)
+    return pd.DataFrame(flat_data)
 
-def generar_ficha_estilizada(b):
-    """Genera el HTML de la ficha técnica de alto impacto"""
-    color_riesgo = "#EF4444" if str(b['Riesgo']).lower() == "alto" else "#10B981"
-    return f"""
-    <div class="buque-perfil">
-        <div style="display: flex; justify-content: space-between; align-items: start;">
-            <div>
-                <h1 style="color: #60A5FA; margin:0;">🚢 {b['Nombre']}</h1>
-                <p style="color: #94A3B8; font-size: 1.1rem;">ID Sistema: {b['id_buque']}</p>
-            </div>
-            <div style="background: {color_riesgo}; padding: 5px 15px; border-radius: 20px; font-weight: bold; color: white;">
-                RIESGO: {str(b['Riesgo']).upper()}
+def display_styled_profile(b):
+    """Renderiza una ficha técnica de buque de nivel militar"""
+    riesgo_color = "#EF4444" if str(b['Riesgo']).lower() == "alto" else "#3B82F6"
+    st.markdown(f"""
+    <div class="vessel-profile">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h1 style="color: #60A5FA; margin:0; font-family: 'Courier New', monospace;">🚢 {b['Nombre']}</h1>
+            <div style="background: {riesgo_color}; padding: 8px 20px; border-radius: 30px; font-weight: 800; color: white; letter-spacing: 1px;">
+                RIESGO {str(b['Riesgo']).upper()}
             </div>
         </div>
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-top: 20px;">
-            <div class="stat-box"><small>BANDERA</small><br><strong>{b['Bandera']}</strong></div>
-            <div class="stat-box"><small>TIPO</small><br><strong>{b['Tipo']}</strong></div>
-            <div class="stat-box"><small>MMSI</small><br><strong>{b['MMSI']}</strong></div>
-            <div class="stat-box"><small>IMO</small><br><strong>{b['IMO']}</strong></div>
-            <div class="stat-box"><small>ESLORA</small><br><strong>{b['Eslora']} m</strong></div>
-            <div class="stat-box"><small>ARQUEO</small><br><strong>{b['Arqueo']} GT</strong></div>
-            <div class="stat-box"><small>CONSTRUIDO</small><br><strong>{b['Construccion']}</strong></div>
-            <div class="stat-box"><small>ESTADO</small><br><strong style="color:#34D399;">ACTIVO</strong></div>
+        <p style="color: #64748B; margin-top: 5px;">Identificador de Sistema: {b['id_buque']}</p>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-top: 25px;">
+            <div class="kpi-box"><span class="kpi-lab">Bandera</span><span class="kpi-val">{b['Bandera']}</span></div>
+            <div class="kpi-box"><span class="kpi-lab">Tipo</span><span class="kpi-val">{b['Tipo']}</span></div>
+            <div class="kpi-box"><span class="kpi-lab">MMSI</span><span class="kpi-val">{b['MMSI']}</span></div>
+            <div class="kpi-box"><span class="kpi-lab">IMO</span><span class="kpi-val">{b['IMO']}</span></div>
+            <div class="kpi-box"><span class="kpi-lab">Eslora</span><span class="kpi-val">{b['Eslora']} m</span></div>
+            <div class="kpi-box"><span class="kpi-lab">Arqueo</span><span class="kpi-val">{b['Arqueo']} GT</span></div>
+            <div class="kpi-box"><span class="kpi-lab">Año</span><span class="kpi-val">{b['Construccion']}</span></div>
+            <div class="kpi-box"><span class="kpi-lab">Estado</span><span class="kpi-val" style="color: #10B981;">OPERATIVO</span></div>
         </div>
     </div>
-    """
+    """, unsafe_allow_html=True)
 
-# --- EL MOTOR DEL SÚPER AGENTE ---
-def motor_agente(prompt, df_contexto, extra_file_df=None):
-    # Consolidar contexto
-    csv_data = df_contexto.to_csv(index=False)
-    archivo_contexto = f"\nDATOS ARCHIVO SUBIDO:\n{extra_file_df.to_csv(index=False)}" if extra_file_df is not None else ""
+# --- LÓGICA DEL SÚPER AGENTE ---
+def agent_brain(prompt, df_main, df_extra=None):
+    contexto_extra = f"\nARCHIVO SUBIDO:\n{df_extra.head(50).to_csv(index=False)}" if df_extra is not None else ""
     
-    contexto_master = f"""
-    Eres el Súper Agente Táctico RBPE. Tu misión es analizar la flota, generar cambios y producir visualizaciones.
-    BASE DE DATOS ACTUAL: {csv_data} {archivo_contexto}
+    sys_prompt = f"""
+    Eres el Súper Agente RBPE 'Marcelo-AI', un Analista Naval de nivel Corporativo Militar.
+    DATOS MAESTROS SUPABASE:
+    {df_main.to_csv(index=False)}
+    {contexto_extra}
     
-    REGLAS DE ORO:
-    1. Si te piden información de un buque específico, responde con: [VESSEL_PROFILE: ID_DEL_BUQUE]
-    2. Si te piden un gráfico, genera un bloque de código python usando 'df' y 'fig': ```python ... ```
-    3. Si te piden cambiar algo (Riesgo), usa: [DB_ACTION: UPDATE KEY="id" FIELD="Riesgo" VALUE="Nuevo"]
-    4. El año actual es 2026. Calcula antigüedades basándote en eso.
-    5. Sé directo, táctico y profesional.
+    CAPACIDADES:
+    1. Perfil de Buque: Si mencionas un buque o el usuario lo pide, usa: [PROFILE: ID_BUQUE]
+    2. Actualización DB: Si ordenan cambiar el riesgo, usa: [UPDATE: ID_BUQUE, Campo, Valor] (Campos: Riesgo, Nombre)
+    3. Gráficos: Genera bloques de código python con Plotly usando 'df' y 'fig': ```python ... ```
+    4. Informes: Genera tablas en Markdown y análisis detallado.
+    
+    REGLA: El año actual es 2026. Responde de forma táctica y concisa.
     """
-    
-    response = modelo_ia.generate_content(contexto_master + "\nUsuario: " + prompt)
+    response = modelo_ia.generate_content(sys_prompt + "\nComando Usuario: " + prompt)
     return response.text
 
-def procesar_respuesta(texto, df):
-    # 1. Detectar Fichas Estilizadas
-    vessel_match = re.search(r"\[VESSEL_PROFILE:\s*(.*?)\]", texto)
-    if vessel_match:
-        vid = vessel_match.group(1).strip()
-        v_data = df[df['id_buque'] == vid]
-        if not v_data.empty:
-            st.markdown(generar_ficha_estilizada(v_data.iloc[0]), unsafe_allow_html=True)
-
-    # 2. Detectar Cambios en Base de Datos
-    db_match = re.search(r"\[DB_ACTION:\s*UPDATE\s*KEY=\"(.*?)\"\s*FIELD=\"(.*?)\"\s*VALUE=\"(.*?)\"\]", texto)
-    if db_match:
-        kid, field, val = db_match.groups()
+def parse_agent_response(text, df):
+    # 1. Ejecutar Actualizaciones en Supabase
+    updates = re.findall(r"\[UPDATE:\s*(.*?),\s*(.*?),\s*(.*?)\]", text)
+    for uid, field, val in updates:
         try:
-            field_db = "riesgo" if field.lower() == "riesgo" else field
-            supabase.table("buques_identidad").update({field_db: val}).eq("id_buque", kid).execute()
-            st.success(f"⚙️ Sistema Actualizado: Buque {kid} -> {field}={val}")
-            st.cache_data.clear() # Limpiar para ver el cambio
-        except Exception as e: st.error(f"Error DB: {e}")
+            field_name = field.strip().lower()
+            supabase.table("buques_identidad").update({field_name: val.strip()}).eq("id_buque", uid.strip()).execute()
+            st.success(f"⚡ Base de Datos Sincronizada: {uid} -> {field}={val}")
+            st.cache_data.clear()
+        except Exception as e: st.error(f"Falla en escritura: {e}")
 
-    # 3. Detectar y Ejecutar Gráficos
-    texto_limpio = re.sub(r"\[.*?\]", "", texto)
-    partes = re.split(r"```python\s*(.*?)\s*```", texto_limpio, flags=re.DOTALL)
+    # 2. Renderizar Fichas Estilizadas
+    profiles = re.findall(r"\[PROFILE:\s*(.*?)\]", text)
+    for pid in profiles:
+        v_data = df[df['id_buque'] == pid.strip()]
+        if not v_data.empty:
+            display_styled_profile(v_data.iloc[0])
+
+    # 3. Gráficos y Texto
+    clean_text = re.sub(r"\[.*?\]", "", text)
+    blocks = re.split(r"```python\s*(.*?)\s*```", clean_text, flags=re.DOTALL)
     
-    for i, p in enumerate(partes):
-        if i % 2 == 1:
+    for i, block in enumerate(blocks):
+        if i % 2 == 1: # Bloque de código
             try:
                 namespace = {"df": df, "px": px, "go": go, "pd": pd}
-                exec(p, {}, namespace)
+                exec(block, {}, namespace)
                 if "fig" in namespace: st.plotly_chart(namespace["fig"], use_container_width=True)
-            except Exception as e: st.error(f"Error en gráfico dinámico: {e}")
+            except Exception as e: st.error(f"Error gráfico: {e}")
         else:
-            if p.strip(): st.markdown(p)
+            if block.strip(): st.markdown(block)
 
 # --- INTERFAZ PRINCIPAL ---
-st.session_state.df = cargar_flota_completa()
+st.session_state.df = fetch_master_data()
 
 with st.sidebar:
-    st.title("⚓ Centro de Mando")
-    menu = option_menu(None, ["Súper Agente", "Dashboard", "Gestión"], icons=["cpu", "bar-chart", "database"], default_index=0)
+    st.markdown("<h1 style='text-align:center;'>⚓ RBPE TACTICAL</h1>", unsafe_allow_html=True)
+    menu = option_menu(None, ["Súper Agente", "Mapa de Flota", "Config"], icons=["cpu", "map", "gear"], default_index=0)
     st.markdown("---")
-    uploaded_file = st.file_uploader("📁 Subir Archivo Inteligente (CSV/XLSX)", type=["csv", "xlsx"])
+    file = st.file_uploader("📂 Cargar Datos Externos", type=["csv", "xlsx"])
     extra_df = None
-    if uploaded_file:
-        extra_df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('csv') else pd.read_excel(uploaded_file)
-        st.success("Archivo cargado para análisis.")
+    if file:
+        extra_df = pd.read_csv(file) if file.name.endswith('csv') else pd.read_excel(file)
+        st.success("Análisis Multi-Fuente Activo")
 
 if menu == "Súper Agente":
-    st.header("🤖 Analista Táctico RBPE")
+    st.title("🤖 Centro de Inteligencia Marcelo-AI")
     
-    if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "assistant", "content": "Listo para operar, Marcelo. ¿Qué buque o tendencia analizamos hoy?"}]
+    if "chat" not in st.session_state:
+        st.session_state.chat = [{"role": "assistant", "content": "Sistema en línea. Operador Marcelo, ¿cuál es su comando?"}]
 
-    for m in st.session_state.messages:
+    for m in st.session_state.chat:
         with st.chat_message(m["role"]):
-            procesar_respuesta(m["content"], st.session_state.df)
+            parse_agent_response(m["content"], st.session_state.df)
 
-    if prompt := st.chat_input("Comando..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
+    if prompt := st.chat_input("Ej: 'Genera un reporte de buques chinos' o 'Pon riesgo Alto al buque 48fbc03d'"):
+        st.session_state.chat.append({"role": "user", "content": prompt})
         with st.chat_message("user"): st.markdown(prompt)
         
         with st.chat_message("assistant"):
-            with st.spinner("Procesando inteligencia..."):
-                res = motor_agente(prompt, st.session_state.df, extra_df)
-                procesar_respuesta(res, st.session_state.df)
-                st.session_state.messages.append({"role": "assistant", "content": res})
+            with st.spinner("Analizando Red de Datos..."):
+                response_text = agent_brain(prompt, st.session_state.df, extra_df)
+                parse_agent_response(response_text, st.session_state.df)
+                st.session_state.chat.append({"role": "assistant", "content": response_text})
