@@ -1,178 +1,120 @@
 import streamlit as st
-import pandas as pd
 import google.generativeai as genai
-import plotly.express as px
-import plotly.graph_objects as go
-import re
 from supabase import create_client, Client
-import traceback
-import sys
+import pandas as pd
+import json
 
-# --- CONFIGURACIÓN Y ESTÉTICA PREMIUM ---
+# --- 1. CONFIGURACIÓN INICIAL ---
 st.set_page_config(page_title="Charly - Comando Táctico", page_icon="⚓", layout="wide")
 
-st.markdown("""
-<style>
-    @import url('[https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400&display=swap)');
-    
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #07090E; color: #E2E8F0; }
-    .stApp { background-color: #07090E; }
-    
-    #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
-    
-    .stChatMessage {
-        background: rgba(22, 27, 34, 0.6) !important;
-        border: 1px solid rgba(48, 54, 61, 0.8) !important;
-        border-radius: 16px !important;
-        padding: 1.5rem !important;
-        margin-bottom: 1.2rem !important;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-    }
-    
-    .tactical-card {
-        background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
-        border: 1px solid rgba(59, 130, 246, 0.3); border-left: 6px solid #3B82F6;
-        border-radius: 12px; padding: 24px; margin: 20px 0;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5); backdrop-filter: blur(12px);
-    }
-    
-    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 15px; margin-top: 20px; }
-    .kpi-box { background: rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.05); padding: 12px; border-radius: 8px; text-align: center; }
-    .kpi-label { font-size: 0.65rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600; }
-    .kpi-value { font-size: 1.1rem; color: #F8FAFC; font-family: 'JetBrains Mono', monospace; font-weight: 600; margin-top: 4px; display: block; }
-</style>
-""", unsafe_allow_html=True)
-
-# --- SISTEMA DE LOGIN ---
-if "password_correct" not in st.session_state:
-    st.session_state["password_correct"] = False
-
-if not st.session_state["password_correct"]:
-    col1, col2, col3 = st.columns([1, 1.2, 1])
-    with col2:
-        st.markdown("<br><br><h2 style='text-align:center; color: #F8FAFC; font-weight: 800; letter-spacing: 1px;'>⚓ COMANDO RBPE</h2>", unsafe_allow_html=True)
-        user_input = st.text_input("Identificación de Operador")
-        pass_input = st.text_input("Código de Acceso", type="password")
-        if st.button("INICIAR SESIÓN TÁCTICA", use_container_width=True):
-            if user_input in st.secrets["passwords"] and pass_input == st.secrets["passwords"][user_input]:
-                st.session_state["password_correct"] = True
-                st.session_state["user"] = user_input.capitalize()
-                st.rerun()
-            else: st.error("Acceso denegado.")
-    st.stop()
-
-# --- CONEXIÓN DE INFRAESTRUCTURA ---
 @st.cache_resource
-def init_core():
+def init_connections():
     supa = create_client(st.secrets["supabase"]["url"], st.secrets["supabase"]["service_role_key"])
     genai.configure(api_key=st.secrets["api"]["gemini_key"])
-    mod = genai.GenerativeModel('gemini-3.1-flash-lite')
-    return supa, mod
+    return supa
 
-supabase, model = init_core()
+supabase = init_connections()
 
-# --- CARGA MAESTRA DE DATOS ---
-@st.cache_data(ttl=600, show_spinner=False)
-def load_fleet_data():
-    res_id = supabase.table("buques_identidad").select("*, buques_maestro(*), cat_banderas(nombre), cat_tipos_pesca(nombre)").execute()
-    datos_limpios = []
-    for i in res_id.data:
-        m = i.get("buques_maestro") or {}
-        datos_limpios.append({
-            "ID_Buque": i["id_buque"], "Nombre": i["nombre"], "MMSI": i["mmsi"], "Riesgo": i["riesgo"],
-            "Bandera": i["cat_banderas"]["nombre"] if i.get("cat_banderas") else "Desconocida",
-            "Tipo": i["cat_tipos_pesca"]["nombre"] if i.get("cat_tipos_pesca") else "Otros",
-            "IMO": m.get("imo", "-"), "Eslora": m.get("eslora", 0), "Arqueo": m.get("arqueo_bruto", 0)
-        })
-    df_id = pd.DataFrame(datos_limpios)
-    df_ops = pd.DataFrame(supabase.table("operaciones").select("*").execute().data)
-    df_zeea = pd.DataFrame(supabase.table("navegaciones_zeea").select("*").execute().data)
-    return df_id, df_ops, df_zeea
+# --- 2. HERRAMIENTAS TÁCTICAS (FUNCIONES PARA LA IA) ---
 
-with st.spinner("Sincronizando con satélites y base de datos central..."):
-    df_id, df_ops, df_zeea = load_fleet_data()
+def buscar_perfil_buque(identificador: str) -> dict:
+    """
+    Busca información detallada de un buque por su nombre o número MMSI.
+    Usa esta función cuando el usuario pregunte por un barco en específico.
+    Devuelve datos de identidad, bandera, tipo de pesca y empresa.
+    """
+    try:
+        # Hacemos los JOINs con la nueva estructura
+        res = supabase.table("buques_identidad").select(
+            "id_buque, nombre, mmsi, riesgo, indicativo_llamada, "
+            "cat_banderas(nombre), cat_tipos_pesca(nombre), cat_empresas(nombre)"
+        ).or_(f"nombre.ilike.%{identificador}%,mmsi.eq.{identificador}").execute()
+        
+        if not res.data:
+            return {"status": "error", "mensaje": f"No se encontró el buque: {identificador}"}
+        
+        # Si encuentra el buque, buscamos sus datos físicos en buques_maestro
+        id_buque = res.data[0]['id_buque']
+        res_maestro = supabase.table("buques_maestro").select(
+            "eslora, arqueo_bruto, fecha_construccion, imo"
+        ).eq("id_buque", id_buque).execute()
 
-# --- MOTOR CON AUTO-CORRECCIÓN (AGENTIC LOOP) ---
-def ejecutar_con_autocorreccion(instrucciones_base, peticion_usuario, max_intentos=3):
-    historial = [
-        {"role": "user", "parts": [instrucciones_base + "\nOrden del usuario: " + peticion_usuario]}
-    ]
-    
-    patron_regex = r"```python\s*(.*?)\s*```"
-    
-    for intento in range(max_intentos):
-        try:
-            respuesta = model.generate_content(historial)
-            texto_respuesta = respuesta.text
-            
-            # Usando la variable segura patron_regex
-            bloques_codigo = re.findall(patron_regex, texto_respuesta, flags=re.DOTALL)
-            
-            if bloques_codigo:
-                codigo = bloques_codigo[0]
-                entorno_local = {"df_id": df_id, "df_ops": df_ops, "df_zeea": df_zeea, "px": px, "pd": pd, "st": st}
-                
-                try:
-                    exec(codigo, {}, entorno_local)
-                    texto_limpio = re.sub(patron_regex, "", texto_respuesta, flags=re.DOTALL).strip()
-                    if texto_limpio:
-                        st.markdown(texto_limpio)
-                    return texto_respuesta 
-                
-                except Exception as e:
-                    error_msg = f"{type(e).__name__}: {str(e)}"
-                    historial.append({"role": "model", "parts": [texto_respuesta]})
-                    historial.append({"role": "user", "parts": [f"El código generó este error en Python: {error_msg}. Corrige el error de sintaxis y vuelve a generar el código en un bloque ```python ```."]})
-            else:
-                st.markdown(texto_respuesta)
-                return texto_respuesta
-                
-        except Exception as api_e:
-            st.error(f"Error de comunicación con la IA: {api_e}")
-            break
-            
-    st.error("Charly no pudo procesar la consulta tras 3 intentos automáticos.")
-    return "Fallo en la ejecución."
+        return {
+            "status": "success", 
+            "identidad": res.data, 
+            "datos_fisicos": res_maestro.data if res_maestro.data else "No disponibles"
+        }
+    except Exception as e:
+        return {"status": "error", "mensaje": str(e)}
 
-# --- INTERFAZ DEL COMANDO ---
-operador = st.session_state["user"]
-st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Analista Naval <span style='color: #3B82F6;'>Charly</span></h1>", unsafe_allow_html=True)
+def consultar_ultimas_operaciones(identificador: str, limite: int = 5) -> dict:
+    """
+    Obtiene el historial de las últimas operaciones registradas de un buque (puertos, fechas, zonas ZEEA).
+    Requiere el nombre o MMSI del buque.
+    """
+    try:
+        # Primero obtenemos el id_buque
+        res_id = supabase.table("buques_identidad").select("id_buque").or_(f"nombre.ilike.%{identificador}%,mmsi.eq.{identificador}").execute()
+        if not res_id.data:
+             return {"status": "error", "mensaje": "Buque no encontrado para buscar operaciones."}
+             
+        id_buque = res_id.data[0]['id_buque']
+        
+        # Buscamos en la tabla operaciones
+        res_ops = supabase.table("operaciones").select(
+            "puerto_origen, fecha_zarpada, area_ingreso, fecha_ingreso_area, opero_en_zeea, puerto_amarre"
+        ).eq("id_buque", id_buque).limit(limite).execute()
+        
+        return {"status": "success", "operaciones": res_ops.data}
+    except Exception as e:
+        return {"status": "error", "mensaje": str(e)}
 
-if "chat_log" not in st.session_state:
-    st.session_state.chat_log = [{"role": "assistant", "content": f"Saludos, Operador **{operador}**. Motor con auto-corrección habilitado. Proceda."}]
+# Lista de herramientas que le daremos a Gemini
+herramientas_charly = [buscar_perfil_buque, consultar_ultimas_operaciones]
 
-patron_limpieza = r"```python\s*(.*?)\s*```"
+# --- 3. CONFIGURACIÓN DEL AGENTE ---
+model = genai.GenerativeModel(
+    model_name='gemini-1.5-flash', 
+    tools=herramientas_charly,
+    system_instruction="""
+    Eres Charly, analista naval del Comando RBPE. 
+    Tu trabajo es asistir al operador usando estrictamente las herramientas proporcionadas.
+    - Si te preguntan por un buque, usa `buscar_perfil_buque`.
+    - Si te preguntan qué hizo o dónde operó, usa `consultar_ultimas_operaciones`.
+    - Si la herramienta devuelve un error o no encuentra datos, infórmalo con claridad militar.
+    - NUNCA inventes información. Si no tienes la herramienta, di que no estás autorizado/capacitado para esa tarea.
+    - Responde de forma concisa, estructurada (usa viñetas o negritas) y con tono táctico/naval.
+    """
+)
 
-for msg in st.session_state.chat_log:
+if "chat" not in st.session_state:
+    # enable_automatic_function_calling=True hace que Gemini ejecute el código Python por detrás automáticamente
+    st.session_state.chat = model.start_chat(enable_automatic_function_calling=True)
+
+if "mensajes_ui" not in st.session_state:
+    st.session_state.mensajes_ui = [{"role": "assistant", "content": "⚓ **Sistema Táctico en línea.** Conexión segura con Supabase establecida. ¿Cuáles son sus órdenes?"}]
+
+# --- 4. INTERFAZ DE CHAT (FRONTEND) ---
+# Aquí puedes mantener tu CSS personalizado que me mostraste al principio
+
+st.markdown("<h1 style='color: #F8FAFC;'>⚓ Analista Naval <span style='color: #3B82F6;'>Charly</span></h1>", unsafe_allow_html=True)
+
+# Renderizar historial
+for msg in st.session_state.mensajes_ui:
     with st.chat_message(msg["role"]):
-        texto_mostrar = re.sub(patron_limpieza, "", msg["content"], flags=re.DOTALL).strip()
-        if texto_mostrar:
-            st.markdown(texto_mostrar)
+        st.markdown(msg["content"])
 
-if prompt := st.chat_input("Introduzca su comando..."):
-    with st.chat_message("user"): st.markdown(prompt)
-    st.session_state.chat_log.append({"role": "user", "content": prompt})
-    
+# Capturar input
+if prompt := st.chat_input("Introduzca comando (ej: 'Dame el perfil del buque ALFA' o '¿Dónde operó el MMSI 123456789?')..."):
+    st.session_state.mensajes_ui.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
     with st.chat_message("assistant"):
-        instrucciones_maestras = f"""
-        Eres Charly, analista naval autónomo de {operador}.
-        
-        DATASETS EN MEMORIA:
-        - df_id: {df_id.columns.tolist()}
-        - df_ops: {df_ops.columns.tolist()}
-        
-        REGLAS ESTRICTAS PARA ESCRIBIR CÓDIGO PYTHON:
-        1. Tu código se ejecuta directamente. Si cometes un error de sintaxis, el sistema fallará. REVISA BIEN TU SINTAXIS.
-        2. Usa SIEMPRE `st.write()`, `st.dataframe()`, o `st.plotly_chart()` para mostrar la información al usuario.
-        3. Para buscar "cuántos", hazlo así:
-           ```python
-           cantidad = df_id[df_id['Bandera'].str.contains('Kenia', case=False, na=False)].shape[0]
-           st.write(f"Tenemos **{{cantidad}}** buques registrados de esa bandera.")
-           ```
-        4. No respondas "Procedo a buscar...", simplemente escribe el bloque de código y el resultado se mostrará.
-        """
-        
-        with st.spinner("Analizando y validando código en simulador..."):
-            respuesta_final = ejecutar_con_autocorreccion(instrucciones_maestras, prompt)
-            st.session_state.chat_log.append({"role": "assistant", "content": respuesta_final})
+        with st.spinner("Consultando base de datos táctica..."):
+            try:
+                respuesta = st.session_state.chat.send_message(prompt)
+                st.markdown(respuesta.text)
+                st.session_state.mensajes_ui.append({"role": "assistant", "content": respuesta.text})
+            except Exception as api_e:
+                st.error(f"Error de enlace de comunicaciones: {api_e}")
