@@ -59,19 +59,19 @@ def init_connections():
 
 supabase = init_connections()
 
-# --- 4. LA HERRAMIENTA UNIVERSAL REACT CON ESCUDO DE TOKENS ---
+# --- 4. ARSENAL DE HERRAMIENTAS COMPLETAS (LECTURA Y ESCRITURA SEPARADAS) ---
 
 def ejecutar_sql(query: str) -> str:
     """
     Ejecuta una consulta SQL SELECT en la base de datos y devuelve las filas resultantes en formato JSON.
-    Úsala para auditorías de duplicados, comparaciones por cualquier columna (IMO, MMSI), cálculos estadísticos y relaciones complejas.
+    Úsala para auditar datos, verificar si existen registros duplicados o elementos repetidos antes de guardar información.
+    Only select queries allowed.
     """
     try:
         clean_query = query.strip()
         if not clean_query.lower().startswith("select"):
-            return json.dumps({"status": "error", "mensaje": "Solo se permiten consultas SELECT de lectura."})
+            return json.dumps({"status": "error", "mensaje": "Solo se permiten consultas SELECT de lectura por seguridad."})
         
-        # Ejecutar consulta vía RPC remota
         res = supabase.rpc("ejecutar_sql", {"query": clean_query}).execute()
         
         if not res.data:
@@ -79,35 +79,48 @@ def ejecutar_sql(query: str) -> str:
             
         total_filas = len(res.data)
         
-        # ESCUDO ANTI-429: Si el resultado es masivo, lo interceptamos y renderizamos de forma directa
         if total_filas >= 15:
             df = pd.DataFrame(res.data)
             df.columns = [col.upper() for col in df.columns]
-            
-            # Lo guardamos en la interfaz de Streamlit directamente sin pasar por los tokens de Gemini
             st.session_state.mensajes_ui.append({
                 "role": "assistant", 
-                "content": f"📊 **Resultados Optimizados:** Se han extraído {total_filas} registros de la base de datos y se desplegaron directamente en la pantalla para proteger la cuota del sistema.",
+                "content": f"📊 **Resultados Optimizados:** Se han extraído {total_filas} registros y se desplegaron en la pantalla.",
                 "visualizacion": {"tipo": "tabla", "datos": df.to_dict(orient="records")}
             })
             st.session_state["necesita_rerun"] = True
             
-            # Le pasamos a Gemini solo una ficha técnica ultraligera de lo que se acaba de imprimir
-            columnas = list(res.data[0].keys())
-            muestra_inicial = res.data[:2]
-            
-            resumen_ligero = {
+            return json.dumps({
                 "status": "success",
-                "info": "AVISO: El volumen de datos era masivo. Python ya interceptó el JSON y pintó la tabla completa directamente en la pantalla del usuario.",
-                "total_filas_desplegadas_en_pantalla": total_filas,
-                "columnas_de_la_tabla": columnas,
-                "muestra_primeras_filas_para_tu_analisis": muestra_inicial
-            }
-            return json.dumps(resumen_ligero)
+                "info": "Datos masivos renderizados directo en pantalla.",
+                "total_filas": total_filas,
+                "columnas": list(res.data[0].keys()),
+                "muestra": res.data[:2]
+            })
             
-        # Si el resultado es pequeño, se lo damos completo a Gemini para que lo lea sin riesgo de cuota
         return json.dumps(res.data)
-        
+    except Exception as e:
+        return json.dumps({"status": "error", "mensaje": str(e)})
+
+
+def registrar_nuevo_buque(id_buque: str, nombre: str, mmsi: str, id_bandera: int, id_empresa: str, riesgo: str) -> str:
+    """
+    Registra físicamente un nuevo buque en la tabla 'buques_identidad'. 
+    Solo debe ser invocada cuando el usuario haya confirmado explícitamente que los datos previsualizados son correctos.
+    """
+    try:
+        nuevo_registro = {
+            "id_buque": id_buque.strip(),
+            "nombre": nombre.strip().upper(),
+            "mmsi": mmsi.strip(),
+            "id_bandera": int(id_bandera),
+            "id_empresa": id_empresa.strip(),
+            "riesgo": riesgo.strip(),
+            "es_actual": True
+        }
+        res = supabase.table("buques_identidad").insert(nuevo_registro).execute()
+        if res.data:
+            return json.dumps({"status": "success", "mensaje": f"El buque {nombre.upper()} fue dado de alta de manera exitosa en la base de datos."})
+        return json.dumps({"status": "error", "mensaje": "No se pudo confirmar la inserción de datos."})
     except Exception as e:
         return json.dumps({"status": "error", "mensaje": str(e)})
 
@@ -115,58 +128,60 @@ def ejecutar_sql(query: str) -> str:
 def renderizar_interfaz_visual(tipo: str, titulo: str, datos_en_json: str, x_col: str = None, y_col: str = None) -> dict:
     """
     Renderiza un componente visual interactivo (tabla, grafico_barras o grafico_torta) en la pantalla del usuario.
-    Usa esta función si los datos devueltos por ejecutar_sql fueron pequeños (<15) pero deseas darle un formato gráfico o de tabla limpia.
     """
     try:
         datos = json.loads(datos_en_json)
         df = pd.DataFrame(datos)
         df.columns = [col.upper() for col in df.columns]
         
-        x_purgado = x_col.upper() if x_col else None
-        y_purgado = y_col.upper() if y_col else None
-        
         st.session_state.mensajes_ui.append({
             "role": "assistant", 
             "content": f"📊 **Visualización Generada:** {titulo}",
-            "visualizacion": {"tipo": tipo, "datos": df.to_dict(orient="records"), "x": x_purgado, "y": y_purgado, "titulo": titulo}
+            "visualizacion": {"tipo": tipo, "datos": df.to_dict(orient="records"), "x": x_col.upper() if x_col else None, "y": y_col.upper() if y_col else None, "titulo": titulo}
         })
         st.session_state["necesita_rerun"] = True
-        return {"status": "success", "mensaje": "Componente proyectado en la pantalla del usuario."}
+        return {"status": "success", "mensaje": "Componente proyectado en la pantalla."}
     except Exception as e:
         return {"status": "error", "mensaje": str(e)}
 
-herramientas_react = [ejecutar_sql, renderizar_interfaz_visual]
+herramientas_react = [ejecutar_sql, registrar_nuevo_buque, renderizar_interfaz_visual]
 
-# --- 5. ESQUEMA DE DATOS PARA ORIENTACIÓN DEL MODELO ---
+# --- 5. ESQUEMA DE DATOS ---
 esquema_base_datos = """
 Tablas y Columnas del Sistema:
 1. Table 'cat_banderas': id_bandera (int4, PK), nombre (varchar)
 2. Table 'cat_tipos_pesca': id_tipo (int4, PK), nombre (varchar)
-3. Table 'cat_empresas': id_empresa (varchar, PK), nombre (varchar), imo (varchar), direccion (text)
-4. Table 'buques_maestro': id_buque (varchar, PK), imo (varchar), eslora (numeric), arqueo_bruto (numeric), fecha_construccion (varchar)
-5. Table 'buques_identidad': id_historial (uuid, PK), id_buque (varchar), nombre (varchar), id_bandera (int4), mmsi (varchar), mmsi_2 (varchar), indicativo_llamada (varchar), id_tipo (int4), id_empresa (varchar), riesgo (varchar), es_actual (bool)
-6. Table 'operaciones': id_operacion (varchar, PK), id_buque (varchar), puerto_origen (varchar), fecha_zarpada (varchar), area_procedente (varchar), area_fao_procedente (varchar), temporada (varchar), fecha_ingreso_area (varchar), area_ingreso (varchar), puertos_operaciones (text), cantidad_arribos (int4), encuentros (text), operó_en_zeea (varchar), salida_destino (varchar), fecha_egreso (varchar), puerto_amarre (varchar), fecha_amarre (varchar)
-7. Table 'navegaciones_zeea': id_registro (varchar, PK), id_buque (varchar), fecha_ingreso_zeea (varchar), procedencia (varchar), fecha_egreso_zeea (varchar), destino (varchar)
+3. Table 'cat_empresas': id_empresa (varchar, PK), nombre (varchar), imo (varchar)
+4. Table 'buques_maestro': id_buque (varchar, PK), imo (varchar), eslora (numeric), arqueo_bruto (numeric)
+5. Table 'buques_identidad': id_historial (uuid, PK), id_buque (varchar), nombre (varchar), id_bandera (int4), mmsi (varchar), id_tipo (int4), id_empresa (varchar), riesgo (varchar), es_actual (bool)
 """
 
-# --- 6. CONFIGURACIÓN DEL AGENTE DE INTELIGENCIA REACT ---
+# --- 6. CONFIGURACIÓN DEL AGENTE DE INTELIGENCIA CON PROTOCOLO SEGURO ---
 model = genai.GenerativeModel(
     model_name='gemini-3.1-flash-lite', 
     tools=herramientas_react,
     system_instruction=f"""
-    Eres Charly v2, un agente de análisis de datos avanzado configurado bajo el framework ReAct para el Operador {operador}.
+    Eres Charly v2, un agente de análisis y gestión de datos avanzado bajo el framework ReAct para el Operador {operador}.
     
-    TÚ ESQUEMA COGNITIVO (CICLO REACT):
-    1. RAZONAR: Analiza la solicitud del usuario. Planifica la consulta SQL SELECT exacta utilizando este esquema: {esquema_base_datos}.
-    2. RECOMENDACIÓN DE EFICIENCIA: Para preguntas analíticas complejas (como buscar duplicados o contar registros), intenta escribir consultas SQL que agrupen o filtren (ej. usando COUNT, GROUP BY, HAVING) en lugar de descargar tablas completas.
-    3. ACTUAR: Invoca la herramienta `ejecutar_sql`.
-    4. OBSERVACIÓN DINÁMICA: Lee la respuesta de la herramienta. 
-       - Si el resultado de la consulta fue masivo (>=15 filas), la herramienta interceptará los datos, los pintará en la pantalla del usuario automáticamente y te devolverá un resumen con el conteo de filas y una pequeña muestra. Utiliza esa información resumida para elaborar tu conclusión.
-    5. RESPUESTA FINAL: Redacta tu informe final de forma directa, concisa, profesional y corporativa. Confirma los hallazgos numéricos exactos apoyándote en lo observado.
+    PROTOCOLO OBLIGATORIO PARA LA CARGA DE NUEVOS BUQUES:
+    Cuando el usuario te solicite registrar, dar de alta o cargar un nuevo buque, DEBES seguir estrictamente esta secuencia de estados sin saltarte ningún paso:
     
-    DIRECTRICES ESTRICTAS:
-    - Está terminantemente prohibido utilizar la palabra "táctica", "táctico" o modismos de simulación militar. Sé ejecutivo.
-    - No mandes al usuario a contar o revisar registros a mano. Si la herramienta te indica el número total de filas o duplicados procesados, menciona esa cifra con autoridad.
+    1. VALIDACIÓN DE CAMPOS: Verifica que cuentes con todos los datos necesarios: 'id_buque', 'nombre', 'mmsi', 'id_bandera', 'id_empresa', 'riesgo'. Si falta alguno, detén el proceso y solicita de manera amable todos los campos faltantes en una sola respuesta clara.
+    
+    2. AUDITORÍA DE ANOMALÍAS (CICLO REACT): Una vez que tengas los datos completos, NO invoques la función de escritura todavía. Primero, debes ejecutar una consulta de lectura con `ejecutar_sql` para verificar anomalías en la base de datos:
+       - Busca si el 'id_buque' o el 'mmsi' provistos ya existen dentro de la tabla 'buques_identidad'.
+       - Valida reglas de negocio básicas en tu razonamiento (ej. si el MMSI no tiene exactamente 9 dígitos, es una anomalía de formato).
+       Si encuentras un duplicado o error de formato, lístalo explícitamente en tu respuesta como una "Anomalía Detectada". Si todo está en orden, reporta: "Auditoría de consistencia: Sin anomalías detectadas".
+    
+    3. PREVISUALIZACIÓN ESTRUCTURADA: Inmediatamente después de informar sobre las anomalías, debes mostrarle al usuario la estructura completa del bloque de información que se pretende insertar. Preséntala de forma impecable usando un bloque de código estructurado en formato JSON.
+    
+    4. CORTE Y CONFIRMACIÓN HUMANA: Al final de ese mensaje, haz una pregunta de confirmación directa y clara: "¿Confirma el ingreso de este bloque de información en la base de datos?". En este turno, ESTÁ TERMINANTEMENTE PROHIBIDO invocar la herramienta `registrar_nuevo_buque`. Debes esperar la respuesta del usuario.
+    
+    5. INSERCIÓN FINAL: Solo cuando el usuario te responda de forma explícita con una afirmación (ej. "Sí", "Proceder", "Confirmado"), procederás en ese nuevo turno a ejecutar la herramienta `registrar_nuevo_buque` con los datos auditados.
+    
+    REGLAS GENERALES:
+    - Está prohibido utilizar la palabra "táctica", "táctico" o modismos militares. Sé directo, pulcro y puramente corporativo.
+    - No delegues en el usuario la tarea de buscar o contar duplicados. Tú haces la consulta intermedia y le das las conclusiones en limpio.
     """
 )
 
@@ -174,10 +189,10 @@ if "chat" not in st.session_state:
     st.session_state.chat = model.start_chat(enable_automatic_function_calling=True)
 
 if "mensajes_ui" not in st.session_state:
-    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Centro de Análisis ReAct v2 Estabilizado.** Operador **{operador}**, pasarela SQL protegida contra saturación de cuota. Introduzca su requerimiento."}]
+    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Centro de Análisis Operativo Activo.** Operador **{operador}**, sistemas de consulta ReAct y protocolos de modificación segura en línea. ¿Qué datos desea procesar?"}]
 
-# --- 7. INTERFAZ DE CHAT Y DESPLIEGUE VISUAL REACTIVO ---
-st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Analista ReAct <span style='color: #3B82F6;'>Charly v2</span></h1>", unsafe_allow_html=True)
+# --- 7. INTERFAZ DE CHAT Y DESPLIEGUE VISUAL ---
+st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Analista Operativo <span style='color: #3B82F6;'>Charly v2</span></h1>", unsafe_allow_html=True)
 
 for msg in st.session_state.mensajes_ui:
     with st.chat_message(msg["role"]):
@@ -197,14 +212,14 @@ for msg in st.session_state.mensajes_ui:
                 fig = px.pie(df_visual, names=v["x"], values=v["y"], title=v["titulo"], template="plotly_dark")
                 st.plotly_chart(fig, use_container_width=True)
 
-if prompt := st.chat_input("Ordene cualquier consulta analítica o auditoría cruzada..."):
+if prompt := st.chat_input("Introduzca una consulta o solicitud de registro..."):
     st.session_state["necesita_rerun"] = False
     st.session_state.mensajes_ui.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Ejecutando ciclo ReAct (Razonamiento, Acción y Observación)..."):
+        with st.spinner("Procesando en el ciclo seguro de datos..."):
             try:
                 respuesta = st.session_state.chat.send_message(prompt)
                 st.markdown(respuesta.text)
@@ -214,4 +229,4 @@ if prompt := st.chat_input("Ordene cualquier consulta analítica o auditoría cr
                     st.session_state["necesita_rerun"] = False
                     st.rerun()
             except Exception as api_e:
-                st.error(f"Fallo de comunicación en el bucle ReAct: {api_e}")
+                st.error(f"Fallo de comunicación en la interfaz de datos: {api_e}")
