@@ -5,12 +5,12 @@ import pandas as pd
 import plotly.express as px
 import json
 
-# --- 1. CONFIGURACIÓN Y ESTÉTICA PREMIUM ---
+# --- 1. CONFIGURACIÓN Y ESTÉTICA PREMIUM MÁSTER ---
 st.set_page_config(page_title="Charly - Comando Táctico", page_icon="⚓", layout="wide")
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght=300;400;600;800&family=JetBrains+Mono:wght=400&display=swap');
     
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #07090E; color: #E2E8F0; }
     .stApp { background-color: #07090E; }
@@ -29,7 +29,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SISTEMA DE LOGIN ---
+# --- 2. SISTEMA DE LOGIN DE OPERADORES ---
 if "password_correct" not in st.session_state:
     st.session_state["password_correct"] = False
 
@@ -50,21 +50,22 @@ if not st.session_state["password_correct"]:
 
 operador = st.session_state["user"]
 
-# --- 3. CONEXIÓN DE INFRAESTRUCTURA INMUNE (SÓLO API REST) ---
+# --- 3. INFRAESTRUCTURA INMUNE (CONEXIÓN API HTTPS NATIIVA) ---
 @st.cache_resource
 def init_connections():
-    # Usamos la conexión estándar de Supabase que ya sabemos que te funciona al 100%
+    # Usamos la API web de Supabase (Puerto 443 estándar, inmune a bloqueos)
     supa = create_client(st.secrets["supabase"]["url"], st.secrets["supabase"]["service_role_key"])
     genai.configure(api_key=st.secrets["api"]["gemini_key"])
     return supa
 
 supabase = init_connections()
 
-# --- 4. ARSENAL DE HERRAMIENTAS DE CHARLY (FUNCTION CALLING) ---
+# --- 4. ARSENAL DE PROCESAMIENTO LOCAL (CERO FUGAS DE TOKENS) ---
 
 def buscar_perfil_buque(identificador: str) -> dict:
     """
-    Busca información individual detallada de un buque por su nombre o número MMSI.
+    Busca información individual detallada de un buque específico por su nombre o MMSI.
+    Útil cuando el usuario pregunta puntualmente por una sola unidad.
     """
     try:
         res = supabase.table("buques_identidad").select(
@@ -88,64 +89,102 @@ def buscar_perfil_buque(identificador: str) -> dict:
     except Exception as e:
         return {"status": "error", "mensaje": str(e)}
 
-def descargar_universo_datos(tabla: str) -> dict:
-    """
-    Descarga los datos completos de una tabla específica para realizar análisis masivos y cruces de datos globales.
-    Tablas permitidas obligatoriamente: 'buques_identidad', 'buques_maestro', 'cat_banderas', 'cat_tipos_pesca', 'cat_empresas', 'operaciones'.
-    """
-    try:
-        # Descarga directa vía API HTTP (Inmune a fallos de puertos Postgres)
-        if tabla == "buques_identidad":
-            res = supabase.table("buques_identidad").select("id_buque, nombre, mmsi, riesgo, id_bandera, id_tipo, id_empresa").execute()
-        elif tabla == "buques_maestro":
-            res = supabase.table("buques_maestro").select("id_buque, imo, eslora, arqueo_bruto, fecha_construccion").execute()
-        elif tabla == "cat_banderas":
-            res = supabase.table("cat_banderas").select("id_bandera, nombre").execute()
-        elif tabla == "cat_tipos_pesca":
-            res = supabase.table("cat_tipos_pesca").select("id_tipo, nombre").execute()
-        elif tabla == "cat_empresas":
-            res = supabase.table("cat_empresas").select("id_empresa, nombre").execute()
-        elif tabla == "operaciones":
-            res = supabase.table("operaciones").select("id_operacion, id_buque, puerto_origen, fecha_zarpada, opero_en_zeea").execute()
-        else:
-            return {"status": "error", "mensaje": f"Tabla '{tabla}' no autorizada o inexistente."}
-            
-        return {"status": "success", "datos": res.data}
-    except Exception as e:
-        return {"status": "error", "mensaje": str(e)}
 
-def renderizar_visualizacion(tipo: str, titulo: str, datos_en_json: str, x_col: str = None, y_col: str = None) -> dict:
+def generar_reporte_buques_por_bandera(nombre_bandera: str) -> dict:
     """
-    Ordena al sistema del frontend renderizar un elemento visual interactivo como un Gráfico o Tabla en la pantalla del usuario.
-    - tipo: Debe ser 'tabla', 'grafico_barras' o 'grafico_torta'.
-    - datos_en_json: String JSON estructurado con los resultados finales procesados.
+    Filtra y despliega un listado interactivo en tabla de todos los buques pertenecientes a una bandera.
+    Usa esta función obligatoriamente cuando pidan listas o tablas de países.
     """
     try:
-        datos = json.loads(datos_en_json)
+        # 1. Resolver el ID de la bandera en los catálogos de Supabase
+        res_bandera = supabase.table("cat_banderas").select("id_bandera, nombre").ilike("nombre", f"%{nombre_bandera}%").execute()
+        if not res_bandera.data:
+            return {"status": "success", "mensaje": f"La bandera '{nombre_bandera}' no consta en nuestros registros actuales."}
+        
+        id_bandera = res_bandera.data[0]['id_bandera']
+        pais_real = res_bandera.data[0]['nombre']
+        
+        # 2. Descargar únicamente las unidades vinculadas a esa bandera
+        res_buques = supabase.table("buques_identidad").select("nombre, mmsi, riesgo, id_empresa").eq("id_bandera", id_bandera).execute()
+        
+        if not res_buques.data:
+            return {"status": "success", "mensaje": f"Enlace correcto. Confirmado que actualmente constan 0 buques operando bajo la bandera de {pais_real}."}
+        
+        df = pd.DataFrame(res_buques.data)
+        
+        # 3. Cruzar localmente con el catálogo de empresas en el servidor de Streamlit
+        res_empresas = supabase.table("cat_empresas").select("id_empresa, nombre").execute()
+        if res_empresas.data:
+            df_emp = pd.DataFrame(res_empresas.data).rename(columns={"nombre": "Empresa"})
+            df = df.merge(df_emp, on="id_empresa", how="left").drop(columns=["id_empresa"], errors="ignore")
+        
+        # Reordenar columnas para visualización militar limpia
+        df.columns = [col.upper() for col in df.columns]
+
+        # 4. Inyección directa en la UI (By-pass de tokens: los datos no viajan a los servidores de Google)
         st.session_state.mensajes_ui.append({
             "role": "assistant", 
-            "content": f"📊 **Desplegando reporte visual:** *{titulo}*",
-            "visualizacion": {"tipo": tipo, "datos": datos, "titulo": titulo, "x": x_col, "y": y_col}
+            "content": f"📊 **Listado Analítico:** Flota desplegada bajo bandera de **{pais_real}**.",
+            "visualizacion": {"tipo": "tabla", "datos": df.to_dict(orient="records")}
         })
-        return {"status": "success", "mensaje": "Visualización enviada al puente de mando."}
+        
+        # Encendemos el interruptor electrónico de renderizado instantáneo
+        st.session_state["necesita_rerun"] = True
+        
+        # Retorno de bytes mínimos para proteger la API Key
+        return {"status": "success", "mensaje": f"Éxito operacional. Encontrados {len(df)} buques de {pais_real}. El componente visual ya se pintó en pantalla. Informa al operador sucintamente."}
     except Exception as e:
         return {"status": "error", "mensaje": str(e)}
 
-herramientas_charly = [buscar_perfil_buque, descargar_universo_datos, renderizar_visualizacion]
 
-# --- 5. CONFIGURACIÓN DEL AGENTE INTELIGENTE ---
+def generar_grafico_distribucion(variable_analisis: str) -> dict:
+    """
+    Genera y procesa gráficos estadísticos masivos de la flota ('riesgo' o 'bandera').
+    variable_analisis permitidas estrictamente: 'riesgo' o 'bandera'.
+    """
+    try:
+        res_buques = supabase.table("buques_identidad").select("riesgo, id_bandera").execute()
+        df = pd.DataFrame(res_buques.data)
+        
+        if variable_analisis == "riesgo":
+            df_df = df['riesgo'].value_counts().reset_index()
+            df_df.columns = ['Nivel de Riesgo', 'Cantidad']
+            st.session_state.mensajes_ui.append({
+                "role": "assistant", 
+                "content": "📊 **Análisis Táctico:** Distribución geométrica de los Niveles de Riesgo en la Flota.",
+                "visualizacion": {"tipo": "grafico_torta", "datos": df_df.to_dict(orient="records"), "x": "Nivel de Riesgo", "y": "Cantidad", "titulo": "Distribución General de Riesgos"}
+            })
+        elif variable_analisis == "bandera":
+            res_banderas = supabase.table("cat_banderas").select("id_bandera, nombre").execute()
+            df_band = pd.DataFrame(res_banderas.data).rename(columns={"nombre": "Bandera"})
+            df = df.merge(df_band, on="id_bandera", how="left")
+            df_df = df['Bandera'].value_counts().reset_index()
+            df_df.columns = ['Bandera', 'Cantidad de Buques']
+            
+            st.session_state.mensajes_ui.append({
+                "role": "assistant", 
+                "content": "📊 **Análisis Táctico:** Concentración de Volumen de Buques por Bandera Operativa.",
+                "visualizacion": {"tipo": "grafico_barras", "datos": df_df.to_dict(orient="records"), "x": "Bandera", "y": "Cantidad de Buques", "titulo": "Carga de Flota por Pabellón Nacional"}
+            })
+            
+        st.session_state["necesita_rerun"] = True
+        return {"status": "success", "mensaje": f"Gráfico analítico de {variable_analisis} procesado de forma local en servidor y renderizado en UI. Confírmalo militarmente de forma breve."}
+    except Exception as e:
+        return {"status": "error", "mensaje": str(e)}
+
+herramientas_charly = [buscar_perfil_buque, generar_reporte_buques_por_bandera, generar_grafico_distribucion]
+
+# --- 5. CONFIGURACIÓN DEL AGENTE INTELIGENTE DE CONTROL ---
 model = genai.GenerativeModel(
     model_name='gemini-3.1-flash-lite', 
     tools=herramientas_charly,
     system_instruction=f"""
-    Eres Charly, analista naval del Comando RBPE bajo las órdenes del Operador {operador}.
+    Eres Charly, el analista naval del Comando RBPE a cargo del Operador {operador}.
     
-    METODOLOGÍA DE ANÁLISIS ABSOLUTA:
-    1. Si te piden recuentos, listados, gráficos o análisis globales de una bandera, riesgo o empresa, NO puedes usar SQL directo. 
-    2. En su lugar, DEBES llamar a la función `descargar_universo_datos` pasándole la tabla principal (ej: 'buques_identidad'). Si requieres nombres de países o empresas para cruzar los datos, descarga también los catálogos correspondientes ('cat_banderas', 'cat_empresas').
-    3. Una vez que el sistema te devuelva los datos de las funciones, tú actuarás como el motor analítico: haz las agrupaciones, filtros y cruces de IDs internamente en tu mente de IA.
-    4. Cuando tengas el resultado del análisis final procesado, DEBES invocar inmediatamente la función `renderizar_visualizacion` pasándole tus conclusiones tabuladas en formato JSON para pintar gráficos de barras, tortas o tablas en pantalla.
-    5. Mantén un lenguaje táctico, limpio y militar. No inventes datos.
+    PROTOCOLO DE RESPUESTA DIRECTA:
+    1. Si la orden requiere listas, visualizaciones, listados, ver los barcos de un país o reportes masivos de toda la flota por banderas o riesgos, invoca inmediatamente tus funciones analíticas correspondientes (`generar_reporte_buques_por_bandera` o `generar_grafico_distribucion`).
+    2. Al delegar todo el procesamiento masivo de datos en Python, los datos se inyectan en pantalla directamente sin saturar tu canal de entrada. Cuando las funciones terminen, recibirás una confirmación corta. Tu única labor es informar de forma ejecutiva, militar y concisa que los gráficos o tablas correspondientes ya se encuentran desplegados en pantalla.
+    3. Mantén tus textos finales cortos y profesionales. No inventes datos bajo ninguna circunstancia.
     """
 )
 
@@ -153,15 +192,17 @@ if "chat" not in st.session_state:
     st.session_state.chat = model.start_chat(enable_automatic_function_calling=True)
 
 if "mensajes_ui" not in st.session_state:
-    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Comando Táctico Online.** Conexión HTTP Nativa establecida. Sistema inmune a errores de puerto. ¿Cuáles son sus órdenes?"}]
+    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Comando Táctico Integrado en línea.** Operador **{operador}**, sistemas de análisis local y renderizado inmediato estabilizados. ¿Cuáles son sus directivas?"}]
 
-# --- 6. INTERFAZ DE CHAT Y DESPLIEGUE VISUAL (FRONTEND) ---
+# --- 6. INTERFAZ DE CHAT Y DESPLIEGUE RECOBRADO (FRONTEND) ---
 st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Analista Naval <span style='color: #3B82F6;'>Charly</span></h1>", unsafe_allow_html=True)
 
+# Pintar el historial reactivamente
 for msg in st.session_state.mensajes_ui:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
         
+        # Interceptor Electrónico: Si hay datos visuales, se pintan de forma instantánea
         if "visualizacion" in msg:
             v = msg["visualizacion"]
             df_visual = pd.DataFrame(v["datos"])
@@ -176,19 +217,24 @@ for msg in st.session_state.mensajes_ui:
                 fig = px.pie(df_visual, names=v["x"], values=v["y"], title=v["titulo"], template="plotly_dark")
                 st.plotly_chart(fig, use_container_width=True)
 
-if prompt := st.chat_input("Ordene su análisis global..."):
+# Captura de prompts
+if prompt := st.chat_input("Ordene su análisis global (ej: 'Listar buques de bandera de Tanzania' o 'Haz un gráfico de barras por bandera')..."):
+    st.session_state["necesita_rerun"] = False
     st.session_state.mensajes_ui.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Sincronizando inteligencia de datos..."):
+        with st.spinner("Sincronizando radares y base de datos local..."):
             try:
+                # El modelo interactúa, manda el JSON minúsculo, Python procesa en servidor e inyecta el gráfico
                 respuesta = st.session_state.chat.send_message(prompt)
                 st.markdown(respuesta.text)
                 st.session_state.mensajes_ui.append({"role": "assistant", "content": respuesta.text})
                 
-                if "Desplegando reporte visual" in respuesta.text:
+                # REFRESCAMIENTO SIN DEMORAS: Rompe el Rendering Lag y actualiza el frontend en el mismo milisegundo
+                if st.session_state.get("necesita_rerun", False):
+                    st.session_state["necesita_rerun"] = False
                     st.rerun()
             except Exception as api_e:
-                st.error(f"Fallo de enlace: {api_e}")
+                st.error(f"Fallo de enlace de comunicaciones: {api_e}")
