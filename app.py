@@ -13,7 +13,7 @@ st.set_page_config(page_title="Charly - Comando Táctico", page_icon="⚓", layo
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400&display=swap');
+    @import url('[https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400&display=swap)');
     
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; background-color: #07090E; color: #E2E8F0; }
     .stApp { background-color: #07090E; }
@@ -99,38 +99,32 @@ def ejecutar_con_autocorreccion(instrucciones_base, peticion_usuario, max_intent
         {"role": "user", "parts": [instrucciones_base + "\nOrden del usuario: " + peticion_usuario]}
     ]
     
+    patron_regex = r"```python\s*(.*?)\s*```"
+    
     for intento in range(max_intentos):
         try:
-            # Pedimos a la IA que genere la respuesta/código
             respuesta = model.generate_content(historial)
             texto_respuesta = respuesta.text
             
-            # Buscamos si hay código para ejecutar
-            bloques_codigo = re.findall(r"```python\s*(.*?)\s*
-```", texto_respuesta, flags=re.DOTALL)
+            # Usando la variable segura patron_regex
+            bloques_codigo = re.findall(patron_regex, texto_respuesta, flags=re.DOTALL)
             
             if bloques_codigo:
-                # Ejecutamos el primer bloque de código que encontremos
                 codigo = bloques_codigo[0]
                 entorno_local = {"df_id": df_id, "df_ops": df_ops, "df_zeea": df_zeea, "px": px, "pd": pd, "st": st}
                 
                 try:
                     exec(codigo, {}, entorno_local)
-                    # Si llega acá, el código corrió perfecto. Mostramos la parte de texto (si la hay) y salimos del loop.
-                    texto_limpio = re.sub(r"```python.*?```", "", texto_respuesta, flags=re.DOTALL).strip()
+                    texto_limpio = re.sub(patron_regex, "", texto_respuesta, flags=re.DOTALL).strip()
                     if texto_limpio:
                         st.markdown(texto_limpio)
-                    return texto_respuesta # Éxito
+                    return texto_respuesta 
                 
                 except Exception as e:
-                    # ¡FALLO EL CÓDIGO! (Ej. olvidó un paréntesis)
                     error_msg = f"{type(e).__name__}: {str(e)}"
-                    # Se lo devolvemos a la IA de forma invisible para que lo arregle
                     historial.append({"role": "model", "parts": [texto_respuesta]})
-                    historial.append({"role": "user", "parts": [f"El código generó este error en Python: {error_msg}. Por favor, corrige el error de sintaxis o lógica y vuelve a generar el código completo en un bloque ```python 
-```."]})
+                    historial.append({"role": "user", "parts": [f"El código generó este error en Python: {error_msg}. Corrige el error de sintaxis y vuelve a generar el código en un bloque ```python ```."]})
             else:
-                # No hay código, es solo una respuesta de texto
                 st.markdown(texto_respuesta)
                 return texto_respuesta
                 
@@ -138,23 +132,23 @@ def ejecutar_con_autocorreccion(instrucciones_base, peticion_usuario, max_intent
             st.error(f"Error de comunicación con la IA: {api_e}")
             break
             
-    # Si superó los 3 intentos y no lo pudo arreglar
-    st.error("Charly intentó resolver el problema 3 veces pero no pudo corregir la consulta. Verifique la estructura de los datos.")
-    return "Fallo en la ejecución tras múltiples intentos."
+    st.error("Charly no pudo procesar la consulta tras 3 intentos automáticos.")
+    return "Fallo en la ejecución."
 
 # --- INTERFAZ DEL COMANDO ---
 operador = st.session_state["user"]
 st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Analista Naval <span style='color: #3B82F6;'>Charly</span></h1>", unsafe_allow_html=True)
 
 if "chat_log" not in st.session_state:
-    st.session_state.chat_log = [{"role": "assistant", "content": f"Saludos, Operador **{operador}**. Motor con auto-corrección habilitado. Cero tolerancia a errores de sintaxis. Proceda."}]
+    st.session_state.chat_log = [{"role": "assistant", "content": f"Saludos, Operador **{operador}**. Motor con auto-corrección habilitado. Proceda."}]
 
-# Mostrar el historial visual (sin ejecutar de nuevo)
+patron_limpieza = r"```python\s*(.*?)\s*```"
+
 for msg in st.session_state.chat_log:
     with st.chat_message(msg["role"]):
-        texto = re.sub(r"```python.*?```", "", msg["content"], flags=re.DOTALL).strip()
-        if texto:
-            st.markdown(texto)
+        texto_mostrar = re.sub(patron_limpieza, "", msg["content"], flags=re.DOTALL).strip()
+        if texto_mostrar:
+            st.markdown(texto_mostrar)
 
 if prompt := st.chat_input("Introduzca su comando..."):
     with st.chat_message("user"): st.markdown(prompt)
@@ -169,10 +163,10 @@ if prompt := st.chat_input("Introduzca su comando..."):
         - df_ops: {df_ops.columns.tolist()}
         
         REGLAS ESTRICTAS PARA ESCRIBIR CÓDIGO PYTHON:
-        1. Tu código se ejecuta directamente. Si cometes un error de sintaxis (como olvidar un paréntesis), el sistema fallará. REVISA BIEN TU SINTAXIS.
+        1. Tu código se ejecuta directamente. Si cometes un error de sintaxis, el sistema fallará. REVISA BIEN TU SINTAXIS.
         2. Usa SIEMPRE `st.write()`, `st.dataframe()`, o `st.plotly_chart()` para mostrar la información al usuario.
         3. Para buscar "cuántos", hazlo así:
-```python
+           ```python
            cantidad = df_id[df_id['Bandera'].str.contains('Kenia', case=False, na=False)].shape[0]
            st.write(f"Tenemos **{{cantidad}}** buques registrados de esa bandera.")
            ```
@@ -180,6 +174,5 @@ if prompt := st.chat_input("Introduzca su comando..."):
         """
         
         with st.spinner("Analizando y validando código en simulador..."):
-            # Aquí ocurre la magia: si se equivoca, lo arregla antes de responderte
             respuesta_final = ejecutar_con_autocorreccion(instrucciones_maestras, prompt)
             st.session_state.chat_log.append({"role": "assistant", "content": respuesta_final})
