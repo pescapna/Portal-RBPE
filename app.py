@@ -5,7 +5,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from streamlit_option_menu import option_menu
 import re
-from io import StringIO
 from supabase import create_client, Client
 
 # --- CONFIGURACIÓN DE PÁGINA ---
@@ -13,157 +12,134 @@ st.set_page_config(page_title="Portal RBPE - Súper Agente", page_icon="⚓", la
 
 # --- CONEXIÓN DE DATOS ---
 try:
-    SUPABASE_URL = st.secrets["supabase"]["url"]
-    SUPABASE_KEY = st.secrets["supabase"]["service_role_key"]
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    # Captura de Secrets
+    URL = st.secrets["supabase"]["url"]
+    KEY = st.secrets["supabase"]["service_role_key"]
+    supabase: Client = create_client(URL, KEY)
     
+    # Configuración de IA (Usando el modelo flash más estable)
     genai.configure(api_key=st.secrets["api"]["gemini_key"])
+    # Cambiamos a 'gemini-1.5-flash' (sin variaciones extrañas)
     modelo_ia = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"Error de Configuración (Secrets): {e}")
+    st.error(f"⚠️ Error en Configuración de Secrets: {e}")
     st.stop()
 
-# --- CSS: ESTILO DARK TÁCTICO ---
+# --- ESTILO TÁCTICO PREMIUM ---
 st.markdown("""
 <style>
     .stApp { background-color: #0B0E14; color: #F1F5F9; }
-    .stChatMessage { background-color: #121620 !important; border: 1px solid #21262D !important; border-radius: 12px !important; }
     .vessel-profile { 
         background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); 
         border: 2px solid #3b82f6; border-radius: 15px; padding: 25px;
         box-shadow: 0 10px 30px rgba(0,0,0,0.6); margin: 20px 0;
     }
-    .kpi-box { background: #161B22; padding: 12px; border-radius: 10px; border: 1px solid #30363D; text-align: center; }
-    .kpi-val { color: #F8FAFC; font-size: 1.4rem; font-weight: 700; display: block; }
-    .kpi-lab { color: #94A3B8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-card { background: #161B22; padding: 12px; border-radius: 10px; border: 1px solid #30363D; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- CARGA DE DATOS OPTIMIZADA ---
+# --- CARGA DE DATOS ---
 @st.cache_data(ttl=60)
-def fetch_master_data():
-    query = supabase.table("buques_identidad").select(
+def get_data():
+    res = supabase.table("buques_identidad").select(
         "id_buque, nombre, mmsi, riesgo, buques_maestro(imo, eslora, arqueo_bruto, fecha_construccion), cat_banderas(nombre), cat_tipos_pesca(nombre)"
     ).execute()
-    flat_data = []
-    for i in query.data:
+    data = []
+    for i in res.data:
         m = i.get("buques_maestro") or {}
-        flat_data.append({
+        data.append({
             "id_buque": i["id_buque"], "Nombre": i["nombre"], "MMSI": i["mmsi"], "Riesgo": i["riesgo"],
             "IMO": m.get("imo"), "Eslora": m.get("eslora"), "Arqueo": m.get("arqueo_bruto"),
             "Construccion": m.get("fecha_construccion"), 
-            "Bandera": i["cat_banderas"]["nombre"] if i.get("cat_banderas") else "Desconocida",
-            "Tipo": i["cat_tipos_pesca"]["nombre"] if i.get("cat_tipos_pesca") else "Otros"
+            "Bandera": i["cat_banderas"]["nombre"] if i.get("cat_banderas") else "-",
+            "Tipo": i["cat_tipos_pesca"]["nombre"] if i.get("cat_tipos_pesca") else "-"
         })
-    return pd.DataFrame(flat_data)
+    return pd.DataFrame(data)
 
-def display_styled_profile(b):
-    """Renderiza una ficha técnica de buque de nivel militar"""
-    riesgo_color = "#EF4444" if str(b['Riesgo']).lower() == "alto" else "#3B82F6"
+def draw_vessel(b):
+    """Ficha visual de alta gama"""
+    color = "#EF4444" if str(b['Riesgo']).lower() == "alto" else "#3B82F6"
     st.markdown(f"""
     <div class="vessel-profile">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h1 style="color: #60A5FA; margin:0; font-family: 'Courier New', monospace;">🚢 {b['Nombre']}</h1>
-            <div style="background: {riesgo_color}; padding: 8px 20px; border-radius: 30px; font-weight: 800; color: white; letter-spacing: 1px;">
+            <h1 style="color: #60A5FA; margin:0;">🚢 {b['Nombre']}</h1>
+            <div style="background: {color}; padding: 8px 20px; border-radius: 30px; font-weight: bold; color: white;">
                 RIESGO {str(b['Riesgo']).upper()}
             </div>
         </div>
-        <p style="color: #64748B; margin-top: 5px;">Identificador de Sistema: {b['id_buque']}</p>
         <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-top: 25px;">
-            <div class="kpi-box"><span class="kpi-lab">Bandera</span><span class="kpi-val">{b['Bandera']}</span></div>
-            <div class="kpi-box"><span class="kpi-lab">Tipo</span><span class="kpi-val">{b['Tipo']}</span></div>
-            <div class="kpi-box"><span class="kpi-lab">MMSI</span><span class="kpi-val">{b['MMSI']}</span></div>
-            <div class="kpi-box"><span class="kpi-lab">IMO</span><span class="kpi-val">{b['IMO']}</span></div>
-            <div class="kpi-box"><span class="kpi-lab">Eslora</span><span class="kpi-val">{b['Eslora']} m</span></div>
-            <div class="kpi-box"><span class="kpi-lab">Arqueo</span><span class="kpi-val">{b['Arqueo']} GT</span></div>
-            <div class="kpi-box"><span class="kpi-lab">Año</span><span class="kpi-val">{b['Construccion']}</span></div>
-            <div class="kpi-box"><span class="kpi-lab">Estado</span><span class="kpi-val" style="color: #10B981;">OPERATIVO</span></div>
+            <div class="stat-card"><small style="color:#94A3B8;">BANDERA</small><br><strong>{b['Bandera']}</strong></div>
+            <div class="stat-card"><small style="color:#94A3B8;">MMSI</small><br><strong>{b['MMSI']}</strong></div>
+            <div class="stat-card"><small style="color:#94A3B8;">IMO</small><br><strong>{b['IMO']}</strong></div>
+            <div class="stat-card"><small style="color:#94A3B8;">ESLORA</small><br><strong>{b['Eslora']} m</strong></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-# --- LÓGICA DEL SÚPER AGENTE ---
-def agent_brain(prompt, df_main, df_extra=None):
-    contexto_extra = f"\nARCHIVO SUBIDO:\n{df_extra.head(50).to_csv(index=False)}" if df_extra is not None else ""
-    
-    sys_prompt = f"""
-    Eres el Súper Agente RBPE 'Marcelo-AI', un Analista Naval de nivel Corporativo Militar.
-    DATOS MAESTROS SUPABASE:
-    {df_main.to_csv(index=False)}
-    {contexto_extra}
-    
-    CAPACIDADES:
-    1. Perfil de Buque: Si mencionas un buque o el usuario lo pide, usa: [PROFILE: ID_BUQUE]
-    2. Actualización DB: Si ordenan cambiar el riesgo, usa: [UPDATE: ID_BUQUE, Campo, Valor] (Campos: Riesgo, Nombre)
-    3. Gráficos: Genera bloques de código python con Plotly usando 'df' y 'fig': ```python ... ```
-    4. Informes: Genera tablas en Markdown y análisis detallado.
-    
-    REGLA: El año actual es 2026. Responde de forma táctica y concisa.
+# --- CEREBRO DEL AGENTE ---
+def ask_agent(prompt, df):
+    sys_msg = f"""
+    Eres Marcelo-AI, Analista Táctico Naval. 
+    BASE DE DATOS: {df.to_csv(index=False)}
+    COMANDOS:
+    - Para mostrar un buque: [FICHA: ID_BUQUE]
+    - Para actualizar riesgo: [UPDATE: ID_BUQUE, Riesgo, Valor]
+    - Para gráficos: Usa bloques ```python e incluye 'fig'
+    - Año actual: 2026.
     """
-    response = modelo_ia.generate_content(sys_prompt + "\nComando Usuario: " + prompt)
-    return response.text
+    try:
+        response = modelo_ia.generate_content(sys_msg + "\nComando: " + prompt)
+        return response.text
+    except Exception as e:
+        return f"❌ Error de conexión con Gemini: {str(e)}"
 
-def parse_agent_response(text, df):
-    # 1. Ejecutar Actualizaciones en Supabase
-    updates = re.findall(r"\[UPDATE:\s*(.*?),\s*(.*?),\s*(.*?)\]", text)
-    for uid, field, val in updates:
-        try:
-            field_name = field.strip().lower()
-            supabase.table("buques_identidad").update({field_name: val.strip()}).eq("id_buque", uid.strip()).execute()
-            st.success(f"⚡ Base de Datos Sincronizada: {uid} -> {field}={val}")
-            st.cache_data.clear()
-        except Exception as e: st.error(f"Falla en escritura: {e}")
+def process_response(text, df):
+    # Actualizaciones DB
+    upd = re.findall(r"\[UPDATE:\s*(.*?),\s*(.*?),\s*(.*?)\]", text)
+    for uid, field, val in upd:
+        supabase.table("buques_identidad").update({field.strip().lower(): val.strip()}).eq("id_buque", uid.strip()).execute()
+        st.success(f"Sincronizado: {uid} actualizado.")
+        st.cache_data.clear()
 
-    # 2. Renderizar Fichas Estilizadas
-    profiles = re.findall(r"\[PROFILE:\s*(.*?)\]", text)
-    for pid in profiles:
-        v_data = df[df['id_buque'] == pid.strip()]
-        if not v_data.empty:
-            display_styled_profile(v_data.iloc[0])
+    # Fichas
+    fichas = re.findall(r"\[FICHA:\s*(.*?)\]", text)
+    for fid in fichas:
+        v = df[df['id_buque'] == fid.strip()]
+        if not v.empty: draw_vessel(v.iloc[0])
 
-    # 3. Gráficos y Texto
-    clean_text = re.sub(r"\[.*?\]", "", text)
-    blocks = re.split(r"```python\s*(.*?)\s*```", clean_text, flags=re.DOTALL)
-    
-    for i, block in enumerate(blocks):
-        if i % 2 == 1: # Bloque de código
+    # Texto y Gráficos
+    clean = re.sub(r"\[.*?\]", "", text)
+    parts = re.split(r"```python\s*(.*?)\s*```", clean, flags=re.DOTALL)
+    for i, p in enumerate(parts):
+        if i % 2 == 1:
             try:
-                namespace = {"df": df, "px": px, "go": go, "pd": pd}
-                exec(block, {}, namespace)
-                if "fig" in namespace: st.plotly_chart(namespace["fig"], use_container_width=True)
-            except Exception as e: st.error(f"Error gráfico: {e}")
+                scope = {"df": df, "px": px, "go": go, "pd": pd}
+                exec(p, {}, scope)
+                if "fig" in scope: st.plotly_chart(scope["fig"], use_container_width=True)
+            except: st.error("Error al generar gráfico dinámico.")
         else:
-            if block.strip(): st.markdown(block)
+            if p.strip(): st.markdown(p)
 
-# --- INTERFAZ PRINCIPAL ---
-st.session_state.df = fetch_master_data()
+# --- UI ---
+st.session_state.df = get_data()
 
 with st.sidebar:
-    st.markdown("<h1 style='text-align:center;'>⚓ RBPE TACTICAL</h1>", unsafe_allow_html=True)
-    menu = option_menu(None, ["Súper Agente", "Mapa de Flota", "Config"], icons=["cpu", "map", "gear"], default_index=0)
-    st.markdown("---")
-    file = st.file_uploader("📂 Cargar Datos Externos", type=["csv", "xlsx"])
-    extra_df = None
-    if file:
-        extra_df = pd.read_csv(file) if file.name.endswith('csv') else pd.read_excel(file)
-        st.success("Análisis Multi-Fuente Activo")
+    menu = option_menu("RBPE TACTICAL", ["Súper Agente", "Dashboard"], icons=["cpu", "bar-chart"], default_index=0)
 
 if menu == "Súper Agente":
-    st.title("🤖 Centro de Inteligencia Marcelo-AI")
+    st.title("🤖 Analista Táctico Marcelo-AI")
     
-    if "chat" not in st.session_state:
-        st.session_state.chat = [{"role": "assistant", "content": "Sistema en línea. Operador Marcelo, ¿cuál es su comando?"}]
+    if "messages" not in st.session_state:
+        st.session_state.messages = [{"role": "assistant", "content": "Sistema operativo. ¿Qué buque desea analizar?"}]
 
-    for m in st.session_state.chat:
+    for m in st.session_state.messages:
         with st.chat_message(m["role"]):
-            parse_agent_response(m["content"], st.session_state.df)
+            process_response(m["content"], st.session_state.df)
 
-    if prompt := st.chat_input("Ej: 'Genera un reporte de buques chinos' o 'Pon riesgo Alto al buque 48fbc03d'"):
-        st.session_state.chat.append({"role": "user", "content": prompt})
-        with st.chat_message("user"): st.markdown(prompt)
-        
+    if p := st.chat_input("Mensaje..."):
+        st.session_state.messages.append({"role": "user", "content": p})
+        with st.chat_message("user"): st.markdown(p)
         with st.chat_message("assistant"):
-            with st.spinner("Analizando Red de Datos..."):
-                response_text = agent_brain(prompt, st.session_state.df, extra_df)
-                parse_agent_response(response_text, st.session_state.df)
-                st.session_state.chat.append({"role": "assistant", "content": response_text})
+            r = ask_agent(p, st.session_state.df)
+            process_response(r, st.session_state.df)
+            st.session_state.messages.append({"role": "assistant", "content": r})
