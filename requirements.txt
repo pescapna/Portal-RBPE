@@ -3,5 +3,3 @@ pandas
 google-generativeai
 plotly
 supabase
-SQLAlchemy
-psycopg2-binary
