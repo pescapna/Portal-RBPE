@@ -7,7 +7,7 @@ import plotly.express as px
 import json
 
 # --- 1. CONFIGURACIÓN Y ESTÉTICA PREMIUM ---
-st.set_page_config(page_title="Charly - Comando Táctico", page_icon="⚓", layout="wide")
+st.set_page_config(page_title="Charly - Agente RBPE", page_icon="⚓", layout="wide")
 
 st.markdown("""
 <style>
@@ -40,7 +40,7 @@ if not st.session_state["password_correct"]:
         st.markdown("<br><br><h2 style='text-align:center; color: #F8FAFC; font-weight: 800; letter-spacing: 1px;'>⚓ COMANDO RBPE</h2>", unsafe_allow_html=True)
         user_input = st.text_input("Identificación de Operador")
         pass_input = st.text_input("Código de Acceso", type="password")
-        if st.button("INICIAR SESIÓN TÁCTICA", use_container_width=True):
+        if st.button("INICIAR SESIÓN", use_container_width=True):
             if user_input in st.secrets["passwords"] and pass_input == st.secrets["passwords"][user_input]:
                 st.session_state["password_correct"] = True
                 st.session_state["user"] = user_input.capitalize()
@@ -130,7 +130,7 @@ def renderizar_visualizacion(tipo: str, titulo: str, datos_en_json: str, x_col: 
         # Inyectamos de manera segura la orden visual en el historial activo de la UI de Streamlit
         st.session_state.mensajes_ui.append({
             "role": "assistant", 
-            "content": f"📊 **Desplegando visualización táctica:** *{titulo}*",
+            "content": f"📊 **Desplegando visualización:** *{titulo}*",
             "visualizacion": {
                 "tipo": tipo,
                 "datos": datos,
@@ -167,7 +167,7 @@ model = genai.GenerativeModel(
     1. Si te piden recuentos, totales, promedios, cruces o análisis de flotas/banderas/riesgos globales, DEBES estructurar una consulta SQL y ejecutarla usando la herramienta `analisis_tactico_sql`. Haz los JOINs necesarios con los catálogos para mostrar los nombres de los países/empresas en vez de los IDs numéricos.
     2. Cuando obtengas los datos de un análisis global, es tu obligación MANDATORIA mostrárselos al usuario llamando inmediatamente a la función `renderizar_visualizacion`. Pásale los datos en un formato JSON limpio y asigna los tipos correspondientes ('tabla', 'grafico_barras', 'grafico_torta').
     3. Si la base de datos devuelve un error o no arroja registros, detalla el reporte con estricta veracidad militar. No inventes datos bajo ninguna circunstancia.
-    4. Tu tono debe ser directo, táctico, conciso y altamente analítico.
+    4. Tu tono debe ser directo, conciso y altamente analítico.
     """
 )
 
@@ -175,7 +175,7 @@ if "chat" not in st.session_state:
     st.session_state.chat = model.start_chat(enable_automatic_function_calling=True)
 
 if "mensajes_ui" not in st.session_state:
-    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Comando Táctico Integrado en línea.** Operador **{operador}**, sistemas de análisis global SQL y renderizado de gráficos activados. ¿Cuál es su requerimiento?"}]
+    st.session_state.mensajes_ui = [{"role": "assistant", "content": f"⚓ **Comando Integrado en línea.** Operador **{operador}**, sistemas de análisis global SQL y renderizado de gráficos activados. ¿Cuál es su requerimiento?"}]
 
 # --- 6. INTERFAZ DE CHAT Y DESPLIEGUE VISUAL (FRONTEND) ---
 st.markdown(f"<h1 style='color: #F8FAFC; font-weight: 800; font-size: 2.2rem;'>⚓ Analista Naval <span style='color: #3B82F6;'>Charly</span></h1>", unsafe_allow_html=True)
